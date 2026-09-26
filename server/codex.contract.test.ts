@@ -106,3 +106,12 @@ it("serves a native image-only Codex turn through the pane-scoped image API", as
   writeFileSync(rollout, transcript(`${answerPrefix}Answer one`));
   expect((await fetch(url)).status).toBe(404);
 });
+
+it("serves skill activity without shipping the selected skill's instruction body", async () => {
+  const envelope = { type: "response_item", payload: { type: "message", role: "user", content: [{ type: "input_text", text: "<skill>\n<name>review</name>\n<path>/project/skills/review/SKILL.md</path>\nPRIVATE SKILL INSTRUCTIONS\n</skill>" }] } };
+  writeFileSync(rollout, `${transcript(`${answerPrefix}Answer one`)}\n${JSON.stringify(envelope)}`);
+  const conversation = await read();
+  expect(conversation.source).toBe("codex-transcript");
+  expect(conversation.turns.at(-1)?.parts).toContainEqual({ kind: "skill", skill: { name: "review", path: "/project/skills/review/SKILL.md", evidence: "instructions", status: "loaded" } });
+  expect(JSON.stringify(conversation)).not.toContain("PRIVATE SKILL INSTRUCTIONS");
+});

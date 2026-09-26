@@ -33,6 +33,7 @@ import { isOmoProcess, omoTranscriptForPane } from "./omo.ts";
 import { trimOutput } from "./tool-output.ts";
 import { parseConversationMetadata } from "./conversation-metadata.ts";
 
+import { invokedSkill } from "./skill-activity.ts";
 import { isContextClear, piMessage, piResults } from "./transcript-records.ts";
 
 export { isOmoProcess } from "./omo.ts";
@@ -168,6 +169,7 @@ export function parseClaudeTranscript(text: string, maxTurns = MAX_TURNS): Conve
         pending.delete(result.tool_use_id);
         trimOutput(tool, claudeResultText(result.content), result.tool_use_id);
         if (result.is_error === true) tool.error = true;
+        if (tool.skill) tool.skill.status = result.is_error === true ? "failed" : "loaded";
       }
       // an image pasted into the prompt: named here, fetched only when shown
       const images: ConversationPart[] = typeof entry.uuid !== "string" ? [] : content.flatMap((block: unknown, index: number) => {
@@ -199,6 +201,8 @@ export function parseClaudeTranscript(text: string, maxTurns = MAX_TURNS): Conve
             input: JSON.stringify(input, null, 2),
             output: "",
           };
+          const skill = invokedSkill(b.name, input);
+          if (skill) { part.skill = skill; part.summary = skill.name; }
           turn.parts.push(part);
           pending.set(String((block as { id?: unknown }).id ?? ""), part);
         }

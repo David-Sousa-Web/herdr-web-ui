@@ -172,13 +172,23 @@ export interface ConversationTurn {
   parts: ConversationPart[];
 }
 
+/** Evidence of skill activity, not a claim that the skill's workflow completed. */
+export interface SkillActivity {
+  name: string;
+  evidence: "invocation" | "instructions";
+  status: "requested" | "loaded" | "failed";
+  path?: string;
+}
+
 export type ConversationPart =
   | { kind: "text"; text: string; phase?: "commentary" | "final_answer" }
   /** the agent's reasoning block; the client folds it and shows it only on request */
   | { kind: "thinking"; text: string }
+  | { kind: "skill"; skill: SkillActivity }
   /** `error`: the call failed (the agent recorded it so, or its output says a command exited non-zero) */
   | {
     kind: "tool"; name: string; summary: string; input: string; output: string; error?: boolean;
+    skill?: SkillActivity;
     /** set when `output` was cut: the call's id, for GET /api/pane/conversation/tool-output, and the whole output's length */
     output_ref?: string; output_size?: number;
   }

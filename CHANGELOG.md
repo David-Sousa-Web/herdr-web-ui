@@ -17,6 +17,12 @@ between releases do not reach them. Remote-PC runtime bundles are versioned sepa
 - Settings open from the sidebar's Settings button (and ⌘⇧, or the palette): the ⚙ in the header,
   one more way to the same place, is gone. On a phone that is ☰, then Settings.
 
+### Fixed
+- Numbered lists in the chat kept their numbers: items with blank lines between them (as agents
+  often write them) each read "1.", a list broken by a code block started over at 1, and one that
+  began at 3 read 1. An item's indented lines now read as its own text, and a code block indented
+  inside a list reads as code.
+
 ## [0.3.19] - 2026-09-27
 
 ### Added

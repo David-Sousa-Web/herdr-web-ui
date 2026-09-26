@@ -1,3 +1,4 @@
+import { isContextClear, piMessage } from "./transcript-records.ts";
 import type { ConversationMetadata, ConversationResponse } from "../shared/protocol.ts";
 
 type RecordValue = Record<string, unknown>;
@@ -29,6 +30,7 @@ export function parseConversationMetadata(text: string, source: ConversationResp
   for (const line of text.split("\n")) {
     let entry: RecordValue;
     try { entry = record(JSON.parse(line)); } catch { continue; }
+    if (isContextClear(entry, source)) { metadata.model = null; metadata.reasoning_effort = null; delete metadata.context; continue; }
     if (source === "codex-transcript") {
       const event = record(entry.payload);
       if (entry.type === "event_msg" && event.type === "token_count") {
@@ -50,7 +52,7 @@ export function parseConversationMetadata(text: string, source: ConversationResp
     } else if (source === "omp-transcript" || source === "omo-transcript" || source === "gjc-transcript") {
       if (entry.type === "model_change") metadata.model = label(entry.modelId);
       if (entry.type === "thinking_level_change") metadata.reasoning_effort = label(entry.thinkingLevel);
-      const message = record(entry.message);
+      const message = piMessage(entry) ?? {};
       if (entry.type === "message" && message.role === "assistant" && label(message.model)) metadata.model = label(message.model);
       if (entry.type === "message" && message.role === "assistant") {
         const usage = record(message.usage);

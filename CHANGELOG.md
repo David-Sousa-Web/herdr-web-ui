@@ -14,8 +14,6 @@ between releases do not reach them. Remote-PC runtime bundles are versioned sepa
   left, as Codex's app shows it; hovering or tapping it says "Context 27% left" with the token
   counts. A session whose window the transcript does not name shows no ring.
 - The `/ commands  @ files` hint above the message box is gone.
-- Settings open from the ⚙ in the header only: the sidebar's own Settings button, one more way to
-  the same place, is gone.
 
 ## [0.3.19] - 2026-09-27
 

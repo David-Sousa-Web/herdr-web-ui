@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useRef, useState, type DragEvent, type KeyboardEvent } from "react";
-import { Download, GripVertical, Pencil, Plus, Terminal, X } from "lucide-react";
+import { Download, GripVertical, Pencil, Plus, Settings, Terminal, X } from "lucide-react";
 
 import "./Sidebar.css";
 
@@ -355,6 +355,10 @@ export function Sidebar({ snapshot, selectedPaneId, actions, version, embedded =
             Install app
           </button>
         )}
+        <button type="button" className="btn btn-ghost sidebar-footer-action" onClick={actions.openSettings}>
+          <Settings aria-hidden="true" />
+          Settings
+        </button>
         <div className="sidebar-brandline">
           <span className="sidebar-app-name">herdr web ui</span>
           <span className="pill">herdr {version ?? "offline"}</span>

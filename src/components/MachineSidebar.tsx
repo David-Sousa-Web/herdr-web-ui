@@ -73,7 +73,8 @@ function MachineGroup({ machine, ...props }: Props & { machine: Machine }) {
         {collapsed ? <ChevronRight className="machine-caret" aria-hidden="true" /> : <ChevronDown className="machine-caret" aria-hidden="true" />}
         <Monitor className="machine-icon" aria-hidden="true" />
         <span className="machine-name">{machine.name}</span>
-        {machine.kind === "local" && <span className="machine-kind">{t("This PC")}</span>}
+        {/* the computer this app's server runs on; on a phone "this PC" read as the phone */}
+        {machine.kind === "local" && <span className="machine-kind" title={t("The computer this app runs on")}>{t("Host")}</span>}
         <span className={`machine-dot is-${machine.state}`} title={t(STATE_WORD[machine.state])} aria-hidden="true" />
       </button>
       <button className="sidebar-row-action" disabled={!online} aria-label={t("New session on {name}", { name: machine.name })} title={t("New session")} onClick={() => props.onNew(machine.id)}><Plus aria-hidden="true" /></button>

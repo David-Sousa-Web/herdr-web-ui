@@ -20,6 +20,8 @@ between releases do not reach them. Remote-PC runtime bundles are versioned sepa
   left, as Codex's app shows it; hovering or tapping it says "Context 27% left" with the token
   counts. A session whose window the transcript does not name shows no ring.
 - The `/ commands  @ files` hint above the message box is gone.
+- In the sidebar, the computer the app runs on is marked **Host**, not "This PC", which on a phone
+  read as the phone.
 - Settings open from the sidebar's Settings button (and ⌘⇧, or the palette): the ⚙ in the header,
   one more way to the same place, is gone. On a phone that is ☰, then Settings.
 

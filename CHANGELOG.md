@@ -7,6 +7,27 @@ between releases do not reach them. Remote-PC runtime bundles are versioned sepa
 
 ## [Unreleased]
 
+## [0.3.21] - 2026-09-27
+
+### Added
+- Codex and Claude skill activity stays visible above folded chat work blocks: the skill name,
+  invocation/read status, and expandable evidence or document path. Recorded activity is distinct
+  from completing the skill's workflow; English and Korean labels work on desktop and mobile.
+- Native Codex image attachments, including image-only prompts, appear in the chat through
+  bounded, pane-scoped image reads.
+
+### Fixed
+- Native context clears discard old turns, pending calls, loaded pages and stale cursors.
+  Late page and tool-output responses cannot restore cleared history or populate another pane.
+- omp, omo and gjc transcripts honor hidden messages and normalize string messages, tool field
+  aliases and embedded results consistently across rendering, paging and full-output reads.
+- omo transcript selection uses process/session evidence and rejects ambiguous same-directory
+  candidates. Claude paste wrappers unwrap only when their identifiers match.
+
+### Changed
+- Growing Codex tasks parse incrementally while preserving transcript rewrite invalidation,
+  reducing repeated parsing of long tool-heavy turns.
+
 ## [0.3.20] - 2026-09-27
 
 ### Added
@@ -464,7 +485,8 @@ First public version.
 - Installable PWA, a mobile key bar, web push alerts and optional token auth.
 - Distribution as a herdr plugin.
 
-[Unreleased]: https://github.com/devswha/herdr-web-ui/compare/v0.3.20...HEAD
+[Unreleased]: https://github.com/devswha/herdr-web-ui/compare/v0.3.21...HEAD
+[0.3.21]: https://github.com/devswha/herdr-web-ui/compare/v0.3.20...v0.3.21
 [0.3.20]: https://github.com/devswha/herdr-web-ui/compare/v0.3.19...v0.3.20
 [0.3.19]: https://github.com/devswha/herdr-web-ui/compare/v0.3.18...v0.3.19
 [0.3.18]: https://github.com/devswha/herdr-web-ui/compare/v0.3.17...v0.3.18

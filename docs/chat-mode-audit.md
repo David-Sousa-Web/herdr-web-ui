@@ -56,8 +56,7 @@ choose a session solely because it is newest or shares the cwd. Ambiguous or
 short-only output remains in the collapsed fallback. A new welcome card excludes
 the preceding terminal output from matching.
 
-Other deliberate limits: native image-only turns/attachment previews are not
-added by this change; omo's existing same-cwd session ambiguity remains. A full
+At the time of the September 22 audit, native image-only turns and omo's same-cwd session ambiguity remained. The follow-up below addresses both. A full
 chatmux provider/database architecture migration was rejected as unnecessary for
 this terminal bridge. Copying its provider implementation was rejected because
 of the different licenses. Input transport, approval navigation, agent launching
@@ -91,3 +90,47 @@ watch mode, environment, token authentication and existing listen address.
 The authenticated health check passed and the live Codex conversation endpoint
 returned `codex-transcript`. The working tree's pre-existing terminal flow-control
 changes were preserved and are included in the running tree.
+
+
+## September 27 transcript fidelity follow-up
+
+Reviewed [chatmux at b258b576](https://github.com/devswha/chatmux/tree/b258b5766f0b6b6c3b5db1474eed220f53524efb).
+The changes adapt its attachment, session-correlation, strict paste-envelope and
+incremental-log patterns to this bridge. No provider implementation was copied:
+chatmux declares AGPL-3.0-or-later, while this repository remains MIT. No new
+runtime dependencies or provider database were introduced.
+
+1. **Codex attachments:** `server/codex-images.ts` recognizes native event
+   `local_images`/`images` and response `input_image`/`local_image` records, including
+   image-only turns. Event/response duplicates become one turn. Conversation JSON
+   holds opaque references; the existing pane image endpoint reads the attachment
+   on demand from that pane's retained rollout chain. Backtracked-away records
+   cannot authorize a fetch. Remote URLs and non-raster images are excluded; local
+   files and inline images have an 8 MiB bound. A local file may change or disappear,
+   so Codex image responses are not cached. Relative image paths use the pane cwd.
+2. **omo identity:** `server/omo.ts` uses canonical store-contained descriptors,
+   native session metadata and `--session-id`. Without exact evidence, only a
+   single omo runtime and single session created during it may be associated.
+   Another same-cwd runtime, an unreadable peer, conflicting claims, missing
+   timestamps or ambiguous candidates leave the terminal fallback. The process
+   tree takes precedence over an SDK child's Claude label. There is no persistent
+   cwd/newest-session guess, and this evidence never controls terminal input.
+3. **Claude pastes:** only complete native wrappers with matching valid IDs are
+   removed. Partial or mismatched tags, literal lookalikes and ordinary whitespace
+   remain untouched, including CRLF input.
+4. **Codex live tasks:** completed JSONL records within the last task are folded
+   once. Pending calls, duplicate message pairs, metadata and an unfinished final
+   line survive polling. HTTP snapshots are detached from parser state, so later
+   results do not mutate prior answers. The existing page/window bounds remain;
+   at most eight incremental task states and 32 MiB of retained source coverage
+   are cached. Observed truncation, replacement and same-size timestamp changes
+   invalidate parser state and cursor generations. Rewrites indistinguishable in
+   inode, size and filesystem timestamps cannot be detected without rereading.
+
+Validation includes attachment parser/HTTP tests, same-cwd real-herdr omo panes,
+partial UTF-8/JSONL and rewrite equivalence against cold reads, and desktop/mobile
+chat browser QA with a loaded image-only thumbnail. Tests own their workspaces and
+transcript stores. `bun scripts/benchmark-codex-transcript.ts` compares 25 updates
+to a synthetic 12.1 MB task: on the development machine, reparsing took 238 ms
+versus 11 ms incremental (21.3x), with identical output. This measures parser work,
+not end-to-end browser or live-session latency.

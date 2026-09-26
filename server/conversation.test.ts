@@ -4,7 +4,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 
 import { forgetHistoryChains } from "./codex.ts";
-import { ConversationUnavailable, gjcTranscriptPath, HistoryChanged, isOmoProcess, MAX_TURNS, omoTranscriptPath, parseClaudeTranscript, parseOmpTranscript, transcriptImage, transcriptPage, transcriptToolOutput } from "./conversation.ts";
+import { ConversationUnavailable, gjcTranscriptPath, HistoryChanged, isOmoProcess, MAX_TURNS, parseClaudeTranscript, parseOmpTranscript, unwrapPastes, transcriptImage, transcriptPage, transcriptToolOutput } from "./conversation.ts";
 
 /** Minimal but shape-true slices of a Claude Code session jsonl. */
 const lines = [
@@ -191,35 +191,6 @@ describe("parseOmpTranscript", () => {
 });
 
 describe("omo transcript resolution", () => {
-  const homes: string[] = [];
-  afterEach(() => {
-    for (const home of homes.splice(0)) rmSync(home, { recursive: true, force: true });
-  });
-
-  /** A temp HOME holding one omo session store for `slug`, each transcript stamped with its own mtime. */
-  function omoHome(slug: string, files: { name: string; cwd: string; mtime: string }[]): string {
-    const home = mkdtempSync(join(tmpdir(), "omo-home-"));
-    homes.push(home);
-    const dir = join(home, ".omo", "agent", "sessions", slug);
-    mkdirSync(dir, { recursive: true });
-    for (const file of files) {
-      const path = join(dir, file.name);
-      writeFileSync(path, `${JSON.stringify({ type: "session", version: 3, id: file.name, cwd: file.cwd })}\n`);
-      utimesSync(path, new Date(file.mtime), new Date(file.mtime));
-    }
-    return home;
-  }
-
-  it("picks the newest transcript whose session header names the pane cwd", () => {
-    const home = omoHome("--home-u-project--", [
-      { name: "older.jsonl", cwd: "/home/u/project", mtime: "2026-09-19T00:00:00.000Z" },
-      { name: "live.jsonl", cwd: "/home/u/project", mtime: "2026-09-21T00:00:00.000Z" },
-      // a newer file the store keeps for another cwd under the same slug must not win
-      { name: "foreign.jsonl", cwd: "/home/u/elsewhere", mtime: "2026-09-21T12:00:00.000Z" },
-    ]);
-    expect(omoTranscriptPath("/home/u/project", home)).toBe(join(home, ".omo", "agent", "sessions", "--home-u-project--", "live.jsonl"));
-  });
-
   it("recognizes omo from a pane's foreground processes, not from herdr's label", () => {
     // argv exactly as herdr's pane.process_info reported them for an omo pane
     expect(isOmoProcess(["node", "/home/u/.nvm/versions/node/v24.18.0/bin/omo"])).toBeTrue();
@@ -231,12 +202,6 @@ describe("omo transcript resolution", () => {
     expect(isOmoProcess(["/home/u/.local/bin/claude"])).toBeFalse();
     expect(isOmoProcess(["omp"])).toBeFalse();
     expect(isOmoProcess(["node", "/home/u/omo-tools/watch.js"])).toBeFalse();
-  });
-
-  it("reports no session rather than guessing when the store holds nothing for the cwd", () => {
-    const home = omoHome("--home-u-project--", [{ name: "foreign.jsonl", cwd: "/home/u/elsewhere", mtime: "2026-09-21T00:00:00.000Z" }]);
-    expect(() => omoTranscriptPath("/home/u/project", home)).toThrow(ConversationUnavailable);
-    expect(() => omoTranscriptPath("/home/u/never-opened", home)).toThrow(ConversationUnavailable);
   });
 });
 
@@ -547,4 +512,54 @@ describe("a cut tool output and the whole of it", () => {
       expect(transcriptToolOutput("codex-transcript", codex, "call_x")).toBe(long);
     } finally { rmSync(dir, { recursive: true, force: true }); }
   });
+});
+
+
+it("preserves literal paste lookalikes, partial wrappers and mismatched ids", () => {
+  const cases = [
+    '<pasted_content id="a">\nverbatim\n</pasted_content id="b">',
+    '<pasted_content>\nverbatim\n</pasted_content>',
+    '<pasted_content id="a">verbatim</pasted_content id="a">',
+    '<pasted_content id="a">\nunfinished',
+    '\n\nordinary prompt\n',
+  ];
+  for (const text of cases) expect(unwrapPastes(text)).toBe(text);
+  expect(unwrapPastes('before\n<pasted_content id="a_1">\r\nfirst\r\n</pasted_content id="a_1">\nafter')).toBe("before\nfirst\nafter");
+});
+
+it("incrementally reads one growing Codex task across split UTF-8, partial records and a rewrite", () => {
+  const root = mkdtempSync(join(tmpdir(), "herdr-codex-growing-"));
+  try {
+    const path = join(root, "live.jsonl");
+    const cold = join(root, "cold.jsonl");
+    const records = [
+      { type: "event_msg", payload: { type: "task_started" } },
+      { type: "event_msg", timestamp: "2026-09-27T00:00:00Z", payload: { type: "user_message", message: "한글 👋" } },
+      { type: "turn_context", payload: { model: "model-a", effort: "high" } },
+      ...Array.from({ length: 30 }, (_, n) => [
+        { type: "response_item", payload: { type: "function_call", name: "exec_command", call_id: `c${n}`, arguments: '{"cmd":"ls"}' } },
+        { type: "response_item", payload: { type: "function_call_output", call_id: `c${n}`, output: "x".repeat(5000) } },
+      ]).flat(),
+      { type: "response_item", payload: { type: "message", role: "assistant", phase: "final_answer", content: [{ type: "output_text", text: "끝났어요" }] } },
+    ];
+    const whole = Buffer.from(records.map((entry) => JSON.stringify(entry)).join("\n"));
+    writeFileSync(path, "");
+    for (let at = 0, step = 1; at < whole.length; step = (step * 13) % 571 + 1) {
+      const next = whole.subarray(at, at + step * 7);
+      appendFileSync(path, next); at += next.length;
+      writeFileSync(cold, whole.subarray(0, at));
+      const live = transcriptPage("codex-transcript", path);
+      const reference = transcriptPage("codex-transcript", cold);
+      expect(live.turns).toEqual(reference.turns);
+      expect(live.metadata).toEqual(reference.metadata);
+    }
+    const original = transcriptPage("codex-transcript", path);
+    writeFileSync(path, whole.toString("utf8").replace("model-a", "model-b"));
+    // Some filesystems coalesce immediate writes into one timestamp tick.
+    utimesSync(path, new Date(), new Date(Date.now() + 1000));
+    expect(transcriptPage("codex-transcript", path).metadata.model).toBe("model-b");
+    expect(original.metadata.model).toBe("model-a");
+    writeFileSync(path, records.slice(0, 2).map((entry) => JSON.stringify(entry)).join("\n"));
+    expect(transcriptPage("codex-transcript", path).turns).toHaveLength(1);
+  } finally { rmSync(root, { recursive: true, force: true }); }
 });

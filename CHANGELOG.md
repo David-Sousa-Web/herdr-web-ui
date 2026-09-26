@@ -7,6 +7,8 @@ between releases do not reach them. Remote-PC runtime bundles are versioned sepa
 
 ## [Unreleased]
 
+## [0.3.20] - 2026-09-27
+
 ### Added
 - **Report a problem**: a small bug icon at the end of the chat's status line gathers what a chat
   or prompt-card bug is made of (the versions, browser and agent; the latest turns and the prompt
@@ -462,7 +464,8 @@ First public version.
 - Installable PWA, a mobile key bar, web push alerts and optional token auth.
 - Distribution as a herdr plugin.
 
-[Unreleased]: https://github.com/devswha/herdr-web-ui/compare/v0.3.19...HEAD
+[Unreleased]: https://github.com/devswha/herdr-web-ui/compare/v0.3.20...HEAD
+[0.3.20]: https://github.com/devswha/herdr-web-ui/compare/v0.3.19...v0.3.20
 [0.3.19]: https://github.com/devswha/herdr-web-ui/compare/v0.3.18...v0.3.19
 [0.3.18]: https://github.com/devswha/herdr-web-ui/compare/v0.3.17...v0.3.18
 [0.3.17]: https://github.com/devswha/herdr-web-ui/compare/v0.3.16...v0.3.17

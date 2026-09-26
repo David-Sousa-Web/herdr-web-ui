@@ -341,3 +341,23 @@ describe("Codex tool calls that failed, and patches", () => {
     expect(tools.map((tool) => [tool.summary, tool.error === true])).toEqual([["src/a.ts", false], ["false", true]]);
   });
 });
+
+describe("incremental Codex records", () => {
+  it("pairs duplicates and tool results across writes without mutating earlier snapshots", async () => {
+    const { createCodexTranscriptParser } = await import("./codex.ts");
+    const parser = createCodexTranscriptParser();
+    const first = jsonl(event({ type: "task_started" }), message("user", "Inspect"), item({ type: "function_call", call_id: "long", name: "exec_command", arguments: '{"cmd":"pwd"}' }));
+    parser.write(first);
+    const previous = parser.snapshot();
+    const previousJSON = JSON.stringify(previous);
+    const second = jsonl(item({ type: "function_call_output", call_id: "long", output: "done" }), event({ type: "agent_message", message: "Finished" }));
+    parser.write(second);
+    const final = jsonl(message("assistant", "Finished", "final_answer"), event({ type: "task_complete" }));
+    expect(parser.snapshot(final)).toEqual(parseCodexTranscript(`${first}\n${second}\n${final}`));
+    expect(JSON.stringify(previous)).toBe(previousJSON);
+    expect(parser.snapshot()).toEqual(parseCodexTranscript(`${first}\n${second}`));
+    parser.write(final);
+    expect(parser.snapshot()).toEqual(parseCodexTranscript(`${first}\n${second}\n${final}`));
+    expect(parser.snapshot().at(-1)?.parts.at(-1)).toMatchObject({ phase: "final_answer", text: "Finished" });
+  });
+});

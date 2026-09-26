@@ -83,3 +83,22 @@ it("answers an unchanged conversation with a bodyless 304 and a changed one in f
   expect(changed.headers.get("etag")).not.toBe(etag);
   expect(((await changed.json()) as ConversationResponse).turns.at(-1)?.parts[0]).toMatchObject({ text: `${answerPrefix}Answer two` });
 });
+
+it("serves a native image-only Codex turn through the pane-scoped image API", async () => {
+  const png = Buffer.from("iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMCAO+aH1sAAAAASUVORK5CYII=", "base64");
+  const imagePath = join(root, "shot.png");
+  writeFileSync(imagePath, png);
+  writeFileSync(rollout, `${transcript(`${answerPrefix}Answer one`)}\n${JSON.stringify({ type: "event_msg", timestamp: "2026-09-27T00:00:00Z", payload: { type: "user_message", message: "", local_images: [imagePath] } })}`);
+  const conversation = await read();
+  const image = conversation.turns.at(-1)?.parts[0];
+  expect(image?.kind).toBe("image");
+  if (image?.kind !== "image") throw new Error("missing image");
+  const url = `http://127.0.0.1:${server.port}/api/pane/conversation/image?${new URLSearchParams({ pane_id: paneId, ref: image.ref })}`;
+  const response = await fetch(url);
+  expect(response.status).toBe(200);
+  expect(response.headers.get("content-type")).toBe("image/png");
+  expect(response.headers.get("cache-control")).toContain("no-store");
+  expect(Buffer.from(await response.arrayBuffer())).toEqual(png);
+  writeFileSync(rollout, transcript(`${answerPrefix}Answer one`));
+  expect((await fetch(url)).status).toBe(404);
+});

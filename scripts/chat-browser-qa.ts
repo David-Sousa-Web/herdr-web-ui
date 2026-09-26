@@ -3,7 +3,7 @@
 import "./test-herdr.ts"; // a herdr session of its own: nothing shows in the user's
 import assert from "node:assert/strict";
 import { Database } from "bun:sqlite";
-import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
+import { copyFileSync, mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { chromium } from "playwright-core";
@@ -84,6 +84,19 @@ try {
   await modelInfo.getByText("Reasoning low", { exact: true }).waitFor();
   assert.equal(await modelInfo.getByText("codex-test-model", { exact: true }).count(), 0);
   console.log("PASS model and reasoning metadata update without a new message");
+
+  const imagePath = join(root, "native-image.png");
+  copyFileSync("public/icons/icon-192.png", imagePath);
+  records.push({ type: "event_msg", timestamp: "2026-09-22T00:00:22Z", payload: { type: "user_message", message: "", local_images: [imagePath] } });
+  persist();
+  const nativeImage = log.locator(".chat-user-images img");
+  await nativeImage.waitFor();
+  await page.waitForFunction(() => {
+    const image = document.querySelector<HTMLImageElement>(".chat-user-images img");
+    return image !== null && image.complete && image.naturalWidth > 0;
+  });
+  assert.equal(await nativeImage.count(), 1);
+  console.log("PASS native Codex image-only turn loads its pane-scoped thumbnail");
 
   const gate = new Promise<void>((resolve) => { release = resolve; });
   let requests = 0;

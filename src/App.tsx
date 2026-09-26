@@ -2,7 +2,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { Bell, FolderOpen, Lock, Menu, MessageSquare, PanelLeft, Search, SquareTerminal, X } from "lucide-react";
 
 import type { AgentStatus, ClientRole, ServerMessage, AccessRefusal, HealthAuth } from "../shared/protocol.ts";
-import { ApiError, authenticate, fetchHealth, fetchBridgeHealth, fetchMachines, pairDevice, sendTestPush, signOut, type HealthInfo } from "./lib/api.ts";
+import { ApiError, authenticate, fetchHealth, fetchBridgeHealth, fetchMachines, fetchSession, pairDevice, sendTestPush, signOut, type HealthInfo } from "./lib/api.ts";
 import { deviceLabel, takePairCode } from "./lib/phone.ts";
 import { displayPaneTitle, paneTitle } from "./components/Sidebar.tsx";
 import { PaneTerminal } from "./components/PaneTerminal.tsx";
@@ -136,6 +136,7 @@ export function App() {
   /** the code a scanned QR brought along (`?pair=CODE`), taken off the address at once */
   const [pairCode] = useState(() => takePairCode());
   const [auth, setAuth] = useState<HealthAuth | null>(null);
+  const canSignOut = auth?.authenticated === true && (auth.via === "token" || auth.via === "device");
   // a device that is in only because nothing is paired yet still pairs from the QR code's address
   const pairedFromAddress = useRef(false);
   useEffect(() => {
@@ -363,9 +364,20 @@ export function App() {
   }, []);
   const selectTargetRef = useRef(selectTarget); selectTargetRef.current = selectTarget;
   useEffect(() => {
-    if (selectedPaneId !== null || !snapshot || selectedMachine?.state !== "connected") return;
-    setSelectedPaneId(snapshot.focused_pane_id ?? snapshot.panes[0]?.pane_id ?? null);
-  }, [snapshot, selectedPaneId, selectedMachine?.state]);
+    // An offline PC's cached roster cannot invalidate a selection. Once connected,
+    // a closed pane (including one remembered across reloads) must release its selection.
+    if (!snapshot || selectedMachine?.state !== "connected") return;
+    if (snapshot.panes.some((pane) => pane.pane_id === selectedPaneId)) return;
+    const fallback = (current: typeof snapshot) => current.panes.find((pane) => pane.pane_id === current.focused_pane_id)?.pane_id ?? current.panes[0]?.pane_id ?? null;
+    if (selectedPaneId === null) { setSelectedPaneId(fallback(snapshot)); return; }
+    // The combined roster is cached: a newly created pane can be selected before it
+    // appears there. Confirm absence against this PC before discarding the selection.
+    let cancelled = false;
+    void fetchSession(selectedMachineId).then((current) => {
+      if (!cancelled && !current.panes.some((pane) => pane.pane_id === selectedPaneId)) setSelectedPaneId(fallback(current));
+    }).catch(() => { /* a failed read is not evidence that the pane disappeared */ });
+    return () => { cancelled = true; };
+  }, [snapshot, selectedPaneId, selectedMachineId, selectedMachine?.state]);
   useEffect(() => {
     storeSelection(selectedMachineId, selectedPaneId);
   }, [selectedMachineId, selectedPaneId]);
@@ -463,12 +475,12 @@ export function App() {
         else setSidebarCollapsed((collapsed) => !collapsed);
       },
       toggleTheme: () => updateSettings({ theme: resolvedTheme === "dark" ? "light" : "dark" }),
-      lock: health?.auth?.required ? () => void lock() : null,
+      lock: canSignOut ? () => void lock() : null,
       enableNotifications: bellVisible && !bell.disabled ? () => void enableNotifications() : null,
       refresh: () => void load(),
       openFiles: selectedPaneId !== null ? () => { setDrawerOpen(false); setFilesOpen(true); } : null,
     }),
-    [selectPane, selectedPaneId, selectedMachineId, setView, view, updateSettings, resolvedTheme, health, lock, bellVisible, bell.disabled, enableNotifications, load],
+    [selectPane, selectedPaneId, selectedMachineId, setView, view, updateSettings, resolvedTheme, canSignOut, lock, bellVisible, bell.disabled, enableNotifications, load],
   );
 
   useShortcuts(actions, locked === false);
@@ -588,8 +600,8 @@ export function App() {
               <Bell />
             </button>
           )}
-          {health?.auth?.required && (
-            <button type="button" className="icon-button lock-button header-desktop-only" aria-label={t("Lock")} title={t("Lock")} onClick={() => void lock()}>
+          {canSignOut && (
+            <button type="button" className="icon-button lock-button header-desktop-only" aria-label={t("Sign out")} title={t("Sign out")} onClick={() => void lock()}>
               <Lock />
             </button>
           )}

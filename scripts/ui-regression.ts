@@ -127,6 +127,36 @@ try {
   await page.locator('.composer-status:not([data-status="working"])').waitFor();
   console.log("PASS quick replies send as typed, queue mid-turn, and leave the draft");
 
+  // a problem report gathers the pane's pieces, sends nothing on its own, and files a prefilled issue
+  await page.getByRole("button", { name: "Report a problem", exact: true }).click();
+  const reportDialog = page.getByRole("dialog", { name: "Report a problem" });
+  const reportText = reportDialog.getByRole("textbox", { name: "Report", exact: true });
+  await until(async () => (await reportText.inputValue()).includes("## Environment"), "report gathered");
+  await reportDialog.getByRole("textbox", { name: "What went wrong?" }).fill("list numbers read 1. 1. 1.");
+  await reportDialog.getByLabel("Terminal screen").check();
+  await until(async () => (await reportText.inputValue()).includes("## Terminal screen"), "screen included");
+  assert.match(await reportText.inputValue(), /## What went wrong\n\nlist numbers read 1\. 1\. 1\./);
+  const download = page.waitForEvent("download");
+  await reportDialog.getByRole("button", { name: "Save as file", exact: true }).click();
+  assert.match((await download).suggestedFilename(), /^herdr-report-.+\.md$/);
+  // the issue page itself is GitHub's: the address asked for is what is checked, and never loaded
+  let issueRequested = "";
+  await page.context().route(/^https:\/\/github\.com\//, async (route) => {
+    issueRequested ||= route.request().url();
+    await route.fulfill({ status: 200, contentType: "text/plain", body: "stub" });
+  });
+  const popup = page.waitForEvent("popup");
+  await reportDialog.getByRole("button", { name: "Open a GitHub issue", exact: true }).click();
+  const issue = await popup;
+  await until(() => issueRequested !== "", "issue address requested");
+  const issueAddress = new URL(issueRequested);
+  assert.equal(`${issueAddress.origin}${issueAddress.pathname}`, "https://github.com/devswha/herdr-web-ui/issues/new");
+  assert.equal(issueAddress.searchParams.get("title"), "[claude] list numbers read 1. 1. 1.");
+  await issue.close();
+  await reportDialog.getByRole("button", { name: "Close", exact: true }).click();
+  await reportDialog.waitFor({ state: "hidden" });
+  console.log("PASS a problem report gathers the pane, saves a file, and opens a prefilled issue");
+
   const selectPane = async (paneId: string) => {
     await page.locator(`.pane-select[title^="${paneId} —"]`).click();
     await page.getByRole("log", { name: `conversation of ${paneId}`, exact: true }).waitFor();

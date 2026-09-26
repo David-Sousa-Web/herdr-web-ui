@@ -7,6 +7,12 @@ between releases do not reach them. Remote-PC runtime bundles are versioned sepa
 
 ## [Unreleased]
 
+### Added
+- **Report a problem**: a small bug icon at the end of the chat's status line gathers what a chat
+  or prompt-card bug is made of (the versions, browser and agent; the latest turns and the prompt
+  card as parsed; the terminal screen if chosen) into a report to read and edit. It is then
+  copied, saved as a file, or opened as a prefilled GitHub issue; nothing is sent on its own.
+
 ### Changed
 - The ⚡ button beside the message box is gone: quick replies show above the box only when turned on
   in **Settings → Quick replies** (off by default), so the box looks as it did before them.
@@ -18,7 +24,7 @@ between releases do not reach them. Remote-PC runtime bundles are versioned sepa
   one more way to the same place, is gone. On a phone that is ☰, then Settings.
 
 ### Fixed
-- Numbered lists in the chat kept their numbers: items with blank lines between them (as agents
+- Numbered lists in the chat keep their numbers now: items with blank lines between them (as agents
   often write them) each read "1.", a list broken by a code block started over at 1, and one that
   began at 3 read 1. An item's indented lines now read as its own text, and a code block indented
   inside a list reads as code.

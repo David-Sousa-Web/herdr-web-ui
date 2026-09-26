@@ -98,6 +98,20 @@
   color: var(--status-blocked);
 }
 
+/* the problem report: small, at the status line's end, out of the way of what it reports on */
+.composer-report {
+  flex: none;
+  width: calc(var(--control-h) * 0.75);
+  height: calc(var(--control-h) * 0.75);
+  margin-left: auto;
+  color: var(--text-dim);
+}
+
+.composer-report svg {
+  width: 14px;
+  height: 14px;
+}
+
 .composer-status .agent-mark {
   display: inline-flex;
   flex: none;

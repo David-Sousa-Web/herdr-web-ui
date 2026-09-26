@@ -46,7 +46,7 @@ function Inline({ nodes, interactive = true }: { nodes: InlineNode[]; interactiv
 function List({ block }: { block: ListBlock }) {
   const Tag = block.ordered ? "ol" : "ul";
   return (
-    <Tag className="markdown-list">
+    <Tag className="markdown-list" start={block.ordered ? block.start : undefined}>
       {block.items.map((item, index) => (
         <li key={index}>
           <Inline nodes={item.content} />

@@ -1,0 +1,39 @@
+.report-dialog {
+  width: min(44rem, 100%);
+}
+
+.report-body {
+  display: grid;
+  gap: var(--space-2);
+}
+
+.report-label {
+  color: var(--text-strong);
+  font-weight: var(--fw-medium);
+}
+
+.report-description {
+  resize: vertical;
+}
+
+.report-choices {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-2) var(--space-4);
+}
+
+.report-choice {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-1);
+  font-size: var(--fs-sm);
+}
+
+/* the report itself: read and edited before anything is sent */
+.report-preview {
+  min-height: 14rem;
+  font-family: var(--font-mono);
+  font-size: var(--fs-xs);
+  white-space: pre;
+  resize: vertical;
+}

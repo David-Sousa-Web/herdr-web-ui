@@ -41,7 +41,7 @@ export function MachineSidebar(props: Props) {
       {/* browsers without an install prompt (iOS, plain HTTP) get the steps instead */}
       {!installed && <button className="btn btn-ghost sidebar-footer-action" aria-expanded={canInstall ? undefined : installHelpOpen} onClick={() => { if (canInstall) void install(); else setInstallHelpOpen(!installHelpOpen); }}><Download aria-hidden="true" />{t("Install app")}</button>}
       {!installed && !canInstall && installHelpOpen && <p className="sidebar-install-help" role="status">{help}</p>}
-      <button className="btn btn-ghost sidebar-footer-action" onClick={props.actions.openSettings}><Settings aria-hidden="true" />{t("Settings")}</button>
+      <button className="btn btn-ghost sidebar-footer-action" title={t("Settings (⌘⇧,)")} onClick={props.actions.openSettings}><Settings aria-hidden="true" />{t("Settings")}</button>
       <div className="sidebar-brandline">
         <span className="sidebar-app-name">herdr web ui v{__APP_VERSION__}</span>
         {props.version && <span className="pill">herdr {props.version}</span>}
@@ -73,7 +73,8 @@ function MachineGroup({ machine, ...props }: Props & { machine: Machine }) {
         {collapsed ? <ChevronRight className="machine-caret" aria-hidden="true" /> : <ChevronDown className="machine-caret" aria-hidden="true" />}
         <Monitor className="machine-icon" aria-hidden="true" />
         <span className="machine-name">{machine.name}</span>
-        {machine.kind === "local" && <span className="machine-kind">{t("This PC")}</span>}
+        {/* the computer this app's server runs on; on a phone "this PC" read as the phone */}
+        {machine.kind === "local" && <span className="machine-kind" title={t("The computer this app runs on")}>{t("Host")}</span>}
         <span className={`machine-dot is-${machine.state}`} title={t(STATE_WORD[machine.state])} aria-hidden="true" />
       </button>
       <button className="sidebar-row-action" disabled={!online} aria-label={t("New session on {name}", { name: machine.name })} title={t("New session")} onClick={() => props.onNew(machine.id)}><Plus aria-hidden="true" /></button>

@@ -10,7 +10,7 @@ import {
   type KeyboardEvent,
   type PointerEvent as ReactPointerEvent,
 } from "react";
-import { Clock, FileText, Paperclip, SendHorizontal, Square, X, Zap } from "lucide-react";
+import { Bug, Clock, FileText, Paperclip, SendHorizontal, Square, X } from "lucide-react";
 
 import "./Composer.css";
 
@@ -28,8 +28,8 @@ import {
 } from "../lib/compose.ts";
 import { activeTrigger, applyCompletion, type ActiveTrigger } from "../lib/mentions.ts";
 import { quickReplyButtons, useSettings } from "../lib/settings.ts";
-import { modKeyLabel } from "../lib/shortcuts.ts";
 import { AgentMark } from "./AgentMark.tsx";
+import { ReportDialog } from "./ReportDialog.tsx";
 import { useT } from "../lib/i18n.ts";
 
 export interface ComposerProps {
@@ -57,12 +57,6 @@ const COMMAND_CACHE_MS = 60_000;
 const SLASH_USAGE_KEY = "herdr-web-ui:slash-usage";
 /** One height for every pane on this device: it is the screen, not the conversation, that decides it. */
 const COMPOSER_HEIGHT_KEY = "herdr-web-ui:composer-height";
-/** whether the quick replies row shows, one choice for every pane on this device; hidden until asked for */
-const QUICK_OPEN_KEY = "herdr-web-ui:quick-replies-open";
-
-function storedQuickOpen(): boolean {
-  try { return window.localStorage.getItem(QUICK_OPEN_KEY) === "1"; } catch { return false; }
-}
 const COMPOSER_HEIGHT_MAX = 480;
 const COMPOSER_HEIGHT_STEP = 24;
 /** How far a press on the grip must travel to become a resize: a tap or a resting finger sets nothing. */
@@ -135,6 +129,39 @@ async function cachedPaneCommands(paneId: string, machineId: string, fetchComman
   return commands;
 }
 
+/**
+ * What is left of the context, as a ring filled by what is used (as Codex's app shows it):
+ * red when little is left. The number is on hover, and on a tap beside the ring (a touch
+ * screen has no hover). A window the transcript does not name draws no ring.
+ */
+function ContextRing({ context }: { context: NonNullable<ConversationMetadata["context"]> }) {
+  const t = useT();
+  const [shown, setShown] = useState(false);
+  const left = contextLeftPercent(context);
+  if (left === null || context.window === null) return null;
+  const label = t("Context {percent}% left", { percent: left });
+  const detail = t("{used} of {window} tokens", { used: formatTokens(context.used), window: formatTokens(context.window) });
+  const radius = 6;
+  const circumference = 2 * Math.PI * radius;
+  return (
+    <button
+      type="button"
+      className={`composer-context${left <= 20 ? " is-low" : ""}`}
+      aria-label={`${label} · ${detail}`}
+      title={`${label} · ${detail}`}
+      aria-expanded={shown}
+      onClick={() => setShown((open) => !open)}
+    >
+      <svg viewBox="0 0 16 16" aria-hidden="true">
+        <circle className="composer-context-track" cx="8" cy="8" r={radius} />
+        <circle className="composer-context-used" cx="8" cy="8" r={radius}
+          strokeDasharray={`${circumference * (100 - left) / 100} ${circumference}`} transform="rotate(-90 8 8)" />
+      </svg>
+      {shown && <span className="composer-context-text">{label}</span>}
+    </button>
+  );
+}
+
 /** Chat-style input surface with pane-local drafts, command/file completion, and image mentions. */
 export function Composer({
   connected,
@@ -180,7 +207,9 @@ export function Composer({
   const [dragging, setDragging] = useState(false);
   const [note, setNote] = useState<string | null>(null);
   const [sending, setSending] = useState(false);
-  const [quickOpen, setQuickOpen] = useState(storedQuickOpen);
+  // shown only when chosen in Settings → Quick replies: a button beside the box was one more thing to read
+  const quickOpen = settings.showQuickReplies;
+  const [reporting, setReporting] = useState(false);
   const quickReplies = quickReplyButtons(settings);
   const [manualHeight, setManualHeight] = useState<number | null>(readComposerHeight);
   /** the box's rendered height, for the grip to announce while the height is automatic */
@@ -504,13 +533,6 @@ export function Composer({
     void result.then(settle).finally(() => { if (mounted.current) setSending(false); });
   }, [connected, onSend, sending]);
 
-  const toggleQuick = useCallback(() => {
-    setQuickOpen((open) => {
-      try { window.localStorage.setItem(QUICK_OPEN_KEY, open ? "0" : "1"); } catch { /* private mode: the choice lasts this page */ }
-      return !open;
-    });
-  }, []);
-
   const onKeyDown = useCallback(
     (event: KeyboardEvent<HTMLTextAreaElement>) => {
       if (event.nativeEvent.isComposing) return;
@@ -586,30 +608,16 @@ export function Composer({
             {t("Reasoning {effort}", { effort: metadata.reasoning_effort ?? "—" })}
           </span>
         </span>}
-        {metadata?.context && (() => {
-          const left = contextLeftPercent(metadata.context);
-          const used = formatTokens(metadata.context.used);
-          return (
-            <span
-              className={`composer-context${left !== null && left <= 20 ? " is-low" : ""}`}
-              title={metadata.context.window === null
-                ? t("Context used: {used} tokens (the agent does not say its window)", { used })
-                : t("Context used: {used} of {window} tokens", { used, window: formatTokens(metadata.context.window) })}
-            >
-              {left === null ? t("{used} used", { used }) : t("{percent}% left", { percent: left })}
-            </span>
-          );
-        })()}
+        {metadata?.context && <ContextRing context={metadata.context} />}
         {(uploading || !connected) && (
           <span className="composer-status-hint">
             <span aria-hidden="true">·</span> {t(uploading ? "Uploading file…" : "Reconnecting… message held here, never queued")}
           </span>
         )}
-        {/* what the placeholder used to cram in; Enter-sends is the chat convention and goes unsaid */}
-        <span className="composer-keys-hint" aria-hidden="true">
-          <kbd className="kbd">/</kbd> {t("commands")} <kbd className="kbd">@</kbd> {t("files")}
-          {!settings.enterSends && <> <kbd className="kbd">{modKeyLabel()}+Enter</kbd> {t("sends")}</>}
-        </span>
+        {/* while problems are being chased: a report of this pane's chat, one tap away */}
+        <button type="button" className="icon-button composer-report" aria-label={t("Report a problem")} title={t("Report a problem")} onClick={() => setReporting(true)}>
+          <Bug aria-hidden="true" />
+        </button>
       </div>
 
       {quickOpen && quickReplies.length > 0 && (
@@ -776,18 +784,6 @@ export function Composer({
           >
             <Paperclip aria-hidden="true" />
           </button>
-          {quickReplies.length > 0 && (
-            <button
-              type="button"
-              className="icon-button composer-quick-toggle"
-              aria-label={t(quickOpen ? "Hide quick replies" : "Show quick replies")}
-              aria-pressed={quickOpen}
-              title={t(quickOpen ? "Hide quick replies" : "Show quick replies")}
-              onClick={toggleQuick}
-            >
-              <Zap aria-hidden="true" />
-            </button>
-          )}
         </div>
         <div className="composer-controls composer-controls-right">
           {queueMode && (
@@ -829,6 +825,7 @@ export function Composer({
         </div>
       </div>
       {note && <div className="composer-note" role="alert">{note}</div>}
+      {reporting && <ReportDialog paneId={paneId} agent={agent} agentStatus={agentStatus} model={metadata?.model ?? null} onClose={() => setReporting(false)} />}
     </div>
   );
 }

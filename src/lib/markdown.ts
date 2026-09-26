@@ -14,6 +14,8 @@ export interface ListItem {
 export interface ListBlock {
   type: "list";
   ordered: boolean;
+  /** an ordered list's first number: a list split by a code block goes on from where it was */
+  start?: number;
   items: ListItem[];
 }
 
@@ -136,7 +138,7 @@ function lineAt(lines: string[], index: number): string {
 
 function startsBlock(lines: string[], index: number): boolean {
   const line = lines[index] ?? "";
-  return /^```/.test(line) || /^#{1,6}\s+/.test(line) || /^\s*>/.test(line) || /^(?:\s*[-*_]){3,}\s*$/.test(line) || listLine.test(line)
+  return /^\s{0,3}```/.test(line) || /^#{1,6}\s+/.test(line) || /^\s*>/.test(line) || /^(?:\s*[-*_]){3,}\s*$/.test(line) || listLine.test(line)
     || (line.includes("|") && tableSeparator.test(lines[index + 1] ?? ""));
 }
 
@@ -145,9 +147,27 @@ function parseList(lines: string[], start: number): { block: ListBlock; next: nu
   if (first === null) return { block: { type: "list", ordered: false, items: [] }, next: start + 1 };
   const baseIndent = (first[1] ?? "").length;
   const ordered = /\d/.test(first[2] ?? "");
-  const block: ListBlock = { type: "list", ordered, items: [] };
+  const number = ordered ? Number.parseInt(first[2] ?? "1", 10) : 1;
+  const block: ListBlock = { type: "list", ordered, ...(ordered && number !== 1 ? { start: number } : {}), items: [] };
   let index = start;
   while (index < lines.length) {
+    // between items: blank lines (a loose list, as agents often write one) and an item's own
+    // indented lines, which read on as its text; anything else ends the list
+    if (block.items.length > 0 && !listLine.test(lineAt(lines, index))) {
+      let ahead = index;
+      while (ahead < lines.length && lineAt(lines, ahead).trim() === "") ahead += 1;
+      const line = lineAt(lines, ahead);
+      const indent = /^\s*/.exec(line)?.[0].length ?? 0;
+      const sibling = listLine.exec(line);
+      if (sibling !== null && (sibling[1] ?? "").length === baseIndent && /\d/.test(sibling[2] ?? "") === ordered) { index = ahead; continue; }
+      if (ahead < lines.length && sibling === null && indent >= baseIndent + 2 && !/^\s*```/.test(line)) {
+        const item = block.items.at(-1)!;
+        item.content = [...item.content, { type: "text", value: " " }, ...parseInline(line.trim())];
+        index = ahead + 1;
+        continue;
+      }
+      break;
+    }
     const match = listLine.exec(lineAt(lines, index));
     if (match === null || (match[1] ?? "").length < baseIndent) break;
     if ((match[1] ?? "").length >= baseIndent + 2) {
@@ -184,13 +204,18 @@ export function parseMarkdown(source: string): MarkdownBlock[] {
     const line = lineAt(lines, index);
     if (line.trim() === "") { index += 1; continue; }
 
-    const fence = /^```\s*([^\s`]*)/.exec(line);
+    // a fence may be indented (inside a list item, as agents write them): its lines lose that indent
+    const fence = /^( {0,3})```\s*([^\s`]*)/.exec(line);
     if (fence !== null) {
+      const indent = fence[1] ?? "";
       const body: string[] = [];
       index += 1;
-      while (index < lines.length && !/^```\s*$/.test(lineAt(lines, index))) body.push(lineAt(lines, index++));
+      while (index < lines.length && !/^\s{0,3}```\s*$/.test(lineAt(lines, index))) {
+        const bodyLine = lineAt(lines, index++);
+        body.push(bodyLine.startsWith(indent) ? bodyLine.slice(indent.length) : bodyLine.trimStart());
+      }
       if (index < lines.length) index += 1;
-      blocks.push({ type: "code", language: fence[1] ?? "", value: body.join("\n") });
+      blocks.push({ type: "code", language: fence[2] ?? "", value: body.join("\n") });
       continue;
     }
 

@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { Bell, FolderOpen, Lock, Menu, MessageSquare, PanelLeft, Search, Settings, SquareTerminal, X } from "lucide-react";
+import { Bell, FolderOpen, Lock, Menu, MessageSquare, PanelLeft, Search, SquareTerminal, X } from "lucide-react";
 
 import type { AgentStatus, ClientRole, ServerMessage, AccessRefusal, HealthAuth } from "../shared/protocol.ts";
 import { ApiError, authenticate, fetchHealth, fetchBridgeHealth, fetchMachines, pairDevice, sendTestPush, signOut, type HealthInfo } from "./lib/api.ts";
@@ -588,9 +588,6 @@ export function App() {
               <Bell />
             </button>
           )}
-          <button type="button" className="icon-button" aria-label={t("Settings")} title={t("Settings (⌘⇧,)")} onClick={() => setSettingsOpen(true)}>
-            <Settings />
-          </button>
           {health?.auth?.required && (
             <button type="button" className="icon-button lock-button header-desktop-only" aria-label={t("Lock")} title={t("Lock")} onClick={() => void lock()}>
               <Lock />

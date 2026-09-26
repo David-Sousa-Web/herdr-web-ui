@@ -156,3 +156,26 @@ describe("foldCode", () => {
     expect(fold?.head.endsWith(`line ${FOLDED_CODE_LINES}`)).toBe(true);
   });
 });
+
+describe("numbered lists as agents write them", () => {
+  const lists = (source: string) => parseMarkdown(source).map((block) => block.type === "list" ? { start: block.start ?? 1, items: block.items.length } : block.type);
+
+  it("keeps one list across blank lines between its items", () => {
+    expect(lists("1. a\n\n2. b\n\n3. c")).toEqual([{ start: 1, items: 3 }]);
+  });
+
+  it("goes on from its own number after a code block or other break, and starts where it says", () => {
+    expect(lists("1. first\n```\ncode\n```\n2. second\n3. third")).toEqual([{ start: 1, items: 1 }, "code", { start: 2, items: 2 }]);
+    expect(lists("3. three\n4. four")).toEqual([{ start: 3, items: 2 }]);
+  });
+
+  it("reads an item's indented lines as its own text, and an indented fence as code", () => {
+    const blocks = parseMarkdown("1. first\n   more about it\n2. second");
+    expect(lists("1. first\n   more about it\n2. second")).toEqual([{ start: 1, items: 2 }]);
+    const first = (blocks[0] as Extract<ReturnType<typeof parseMarkdown>[number], { type: "list" }>).items[0]!;
+    expect(first.content.map((node) => node.type === "text" ? node.value : "").join("")).toBe("first more about it");
+    const fenced = parseMarkdown("1. run it\n   ```sh\n   bun test\n   ```\n2. then this");
+    expect(fenced.map((block) => block.type)).toEqual(["list", "code", "list"]);
+    expect(fenced[1]).toEqual({ type: "code", language: "sh", value: "bun test" });
+  });
+});

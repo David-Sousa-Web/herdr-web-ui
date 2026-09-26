@@ -7,6 +7,30 @@ between releases do not reach them. Remote-PC runtime bundles are versioned sepa
 
 ## [Unreleased]
 
+### Added
+- **Report a problem**: a small bug icon at the end of the chat's status line gathers what a chat
+  or prompt-card bug is made of (the versions, browser and agent; the latest turns and the prompt
+  card as parsed; the terminal screen if chosen) into a report to read and edit. It is then
+  copied, saved as a file, or opened as a prefilled GitHub issue; nothing is sent on its own.
+
+### Changed
+- The ⚡ button beside the message box is gone: quick replies show above the box only when turned on
+  in **Settings → Quick replies** (off by default), so the box looks as it did before them.
+- The context left is a small ring beside the model, filled by what is used and red when little is
+  left, as Codex's app shows it; hovering or tapping it says "Context 27% left" with the token
+  counts. A session whose window the transcript does not name shows no ring.
+- The `/ commands  @ files` hint above the message box is gone.
+- In the sidebar, the computer the app runs on is marked **Host**, not "This PC", which on a phone
+  read as the phone.
+- Settings open from the sidebar's Settings button (and ⌘⇧, or the palette): the ⚙ in the header,
+  one more way to the same place, is gone. On a phone that is ☰, then Settings.
+
+### Fixed
+- Numbered lists in the chat keep their numbers now: items with blank lines between them (as agents
+  often write them) each read "1.", a list broken by a code block started over at 1, and one that
+  began at 3 read 1. An item's indented lines now read as its own text, and a code block indented
+  inside a list reads as code.
+
 ## [0.3.19] - 2026-09-27
 
 ### Added

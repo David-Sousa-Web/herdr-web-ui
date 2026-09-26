@@ -65,7 +65,7 @@ try {
   await page.getByRole("button", { name: "Chat", exact: true }).click();
   const draft = page.getByRole("textbox", { name: "Message", exact: true });
   await draft.fill("Unsent draft preserved across update");
-  await page.locator(".app-header").getByRole("button", { name: "Settings", exact: true }).click();
+  await page.locator(".sidebar-footer").getByRole("button", { name: "Settings", exact: true }).click();
   await page.getByRole("heading", { name: "Updates", exact: true }).scrollIntoViewIfNeeded();
 
   writeFileSync(join(upstream, "qa-revision.txt"), "second build\n");
@@ -86,7 +86,7 @@ try {
 
   // A reload is explicit. The new frontend's build revision must match the server.
   await page.locator(".update-notice").getByRole("button", { name: "Reload app" }).click();
-  await page.locator(".app-header").getByRole("button", { name: "Settings", exact: true }).click();
+  await page.locator(".sidebar-footer").getByRole("button", { name: "Settings", exact: true }).click();
   await page.getByRole("heading", { name: "Updates", exact: true }).scrollIntoViewIfNeeded();
   await page.getByText(new RegExp(`^Running (v[0-9.]+ \\()?${next.slice(0, 12)}\\)?$`)).waitFor();
   assert.equal(await page.locator(".update-notice").count(), 0);

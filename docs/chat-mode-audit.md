@@ -134,3 +134,40 @@ transcript stores. `bun scripts/benchmark-codex-transcript.ts` compares 25 updat
 to a synthetic 12.1 MB task: on the development machine, reparsing took 238 ms
 versus 11 ms incremental (21.3x), with identical output. This measures parser work,
 not end-to-end browser or live-session latency.
+
+## History boundaries and late responses — 2026-09-27
+
+Follow-up to the fidelity transfer: inspected chatmux
+[`b258b57`](https://github.com/devswha/chatmux/tree/b258b5766f0b6b6c3b5db1474eed220f53524efb).
+Adapted the native-record rules and request ownership idea independently for this
+MIT bridge; no AGPL implementation or dependency was copied.
+
+- `server/transcript-records.ts` normalizes omp/omo/gjc string messages, hidden
+  messages (`display: false`), tool name/input/ID aliases, string results and
+  embedded tool-result blocks. Rendering, page boundaries, metadata and whole
+  output reads use the same visibility/result rules.
+- Pi `custom/context_clear` and complete Claude `/clear` command envelopes reset
+  turns and pending calls. A chunked scan finds the latest reset and keeps its
+  offset between polls, scanning new bytes on append. Cold reads scan the file
+  once. Paging cannot cross that offset; old cursors return `409 history_changed`.
+  Compaction, quoted commands and torn records do not clear history. Reset control
+  records must fit within the 64 KiB scanner carry limit.
+- `ConversationResponse.history_id` stays stable across appends and changes on
+  observed transcript replacement or clear. The client discards loaded history
+  and late page responses at that boundary, including a clear with no next user
+  prompt. Metadata starts unknown until recorded again after the reset. Old
+  Claude images and tool results are excluded from subsequent asset reads.
+- Whole tool-output requests belong to one machine, pane, history and tool ref.
+  Target changes/unmount abort them; identity checks also reject late success or
+  failure when a transport ignores abort. Repeated clicks share the active fetch.
+
+Verification: `server/chat-history.test.ts` covers native shapes, hidden paging,
+clear while appending, cached/held cursors, chunk boundaries, metadata and output
+reads. `bun scripts/chat-history-browser-qa.ts` bundles the real React components
+and controls response timing in Chrome; it covers stale pages, reused tool IDs,
+PC switches, cancellation and both late success/failure. It touches no herdr pane.
+The existing real-herdr Codex HTTP test also checks the additive history identity.
+
+Large-output chunk APIs and a broader provider abstraction remain deferred:
+whole-output reads retain their existing 2,000,000-character response cap and
+still read the native file on demand. This change does not alter the input path.

@@ -53,6 +53,8 @@ it("serves native Codex conversations and invalidates replaced files even at the
   writeFileSync(rollout, transcript(`${answerPrefix}Answer one`));
   const first = await read();
   expect(first.source).toBe("codex-transcript");
+  expect(first.history_id).toBeString();
+  expect((await read()).history_id).toBe(first.history_id);
   expect(first.metadata).toEqual({ model: "codex-test-model", reasoning_effort: "xhigh" });
   expect((await read()).metadata).toEqual(first.metadata); // cached response keeps metadata
   expect(first.turns.map((turn) => turn.role)).toEqual(["user", "assistant"]);
@@ -60,7 +62,9 @@ it("serves native Codex conversations and invalidates replaced files even at the
   expect(first.turns.at(-1)?.parts[0]).toMatchObject({ text: `${answerPrefix}Answer one`, phase: "final_answer" });
   writeFileSync(`${rollout}.new`, transcript(`${answerPrefix}Answer two`));
   renameSync(`${rollout}.new`, rollout);
-  expect((await read()).turns.at(-1)?.parts[0]).toMatchObject({ text: `${answerPrefix}Answer two` });
+  const replaced = await read();
+  expect(replaced.history_id).not.toBe(first.history_id);
+  expect(replaced.turns.at(-1)?.parts[0]).toMatchObject({ text: `${answerPrefix}Answer two` });
   rmSync(rollout);
   expect(await read()).toEqual({ source: "scrollback", turns: [] });
 });

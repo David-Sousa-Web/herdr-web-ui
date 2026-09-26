@@ -20,7 +20,7 @@ const lines = [
     { type: "thinking", thinking: "internal reasoning stays private" },
     { type: "text", text: "변경된 파일이 하나입니다." },
   ] } }),
-  JSON.stringify({ type: "user", timestamp: "2026-09-19T08:01:00.000Z", message: { role: "user", content: "<command-name>/clear</command-name>" } }),
+  JSON.stringify({ type: "user", timestamp: "2026-09-19T08:01:00.000Z", message: { role: "user", content: "<command-name>/help</command-name>" } }),
 ].join("\n");
 
 describe("parseClaudeTranscript", () => {

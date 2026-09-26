@@ -9,6 +9,7 @@ import "./ChatView.css";
 import { AgentMark } from "./AgentMark.tsx";
 import { Markdown } from "./Markdown.tsx";
 import { PromptCard } from "./PromptCard.tsx";
+import { useWholeOutput as useScopedOutput } from "../lib/useWholeOutput.ts";
 import { ApiError } from "../lib/api.ts";
 import { useMachineApi } from "../lib/machineContext.tsx";
 import { toTranscriptMessages, type TranscriptMessage } from "../lib/transcript.ts";
@@ -27,6 +28,7 @@ import { formatTokens } from "../lib/compose.ts";
 
 /** The pane this chat shows, for what its rows fetch on request (a tool call's whole output). */
 const ChatPaneContext = createContext<string | null>(null);
+const ChatHistoryContext = createContext("");
 import type { TypedAnswer } from "../lib/promptAnswer.ts";
 import type { AgentStatus, ConversationMetadata, ConversationPart, ConversationTurn, InteractivePrompt } from "../../shared/protocol.ts";
 import { currentLanguage, useT } from "../lib/i18n.ts";
@@ -255,16 +257,9 @@ function toolIcon(name: string): ComponentType<LucideProps> {
 function useWholeOutput(ref: string | undefined): { text: string | null; state: "idle" | "loading" | "failed"; load: () => void } {
   const paneId = useContext(ChatPaneContext);
   const machineId = useMachineId();
-  const [text, setText] = useState<string | null>(null);
-  const [state, setState] = useState<"idle" | "loading" | "failed">("idle");
-  const load = useCallback(() => {
-    if (ref === undefined || paneId === null) return;
-    setState("loading");
-    fetch(machinePath(machineId, `pane/conversation/tool-output?${new URLSearchParams({ pane_id: paneId, ref }).toString()}`))
-      .then(async (response) => { if (!response.ok) throw new Error(String(response.status)); setText(await response.text()); setState("idle"); })
-      .catch(() => setState("failed"));
-  }, [machineId, paneId, ref]);
-  return { text, state, load };
+  const history = useContext(ChatHistoryContext);
+  const url = ref === undefined || paneId === null ? null : machinePath(machineId, `pane/conversation/tool-output?${new URLSearchParams({ pane_id: paneId, ref }).toString()}`);
+  return useScopedOutput(url, history);
 }
 
 /** One row of a work block: `▸ name  summary`, expanding to the call's input and output. */
@@ -434,6 +429,8 @@ export const ChatView = memo(function ChatView({ paneId, refreshKey, connected, 
   const loadingOlder = useRef(false);
   /** bumped whenever the older pages are dropped: a load still in flight for them is ignored */
   const olderGeneration = useRef(0);
+  const history = useRef<string | undefined>(undefined);
+  const [historyId, setHistoryId] = useState<string | undefined>(undefined);
   const shownPane = useRef(paneId);
   const prepended = useRef<{ top: number; height: number } | null>(null);
   const [pollKey, setPollKey] = useState(0);
@@ -445,6 +442,7 @@ export const ChatView = memo(function ChatView({ paneId, refreshKey, connected, 
 
   useEffect(() => {
     shownPane.current = paneId;
+    history.current = undefined; setHistoryId(undefined);
     stickToBottom.current = true; signature.current = ""; setState(EMPTY_STATE); setNewMessages(false); setAway(false); setLoaded(false); setError(null); setErrorStatus(null); setPrompt(null);
     dropOlder();
     lastAnswer.current = null;
@@ -471,6 +469,7 @@ export const ChatView = memo(function ChatView({ paneId, refreshKey, connected, 
       return before === held ? pages.flat() : null;
     };
     const read = async (): Promise<void> => {
+      let generation = olderGeneration.current;
       try {
         let conversation;
         try {
@@ -478,10 +477,17 @@ export const ChatView = memo(function ChatView({ paneId, refreshKey, connected, 
         } catch (cause) {
           // a new session or a Codex backtrack replaced the transcript the older pages came from
           if (heldFrom.current === null || !(cause instanceof ApiError) || cause.status !== 409) throw cause;
-          if (!cancelled) dropOlder();
+          if (cancelled || generation !== olderGeneration.current) return;
+          dropOlder(); setState(EMPTY_STATE); signature.current = ""; lastAnswer.current = null;
+          generation = olderGeneration.current;
           conversation = await fetchPaneConversation(paneId);
         }
-        if (cancelled) return;
+        if (cancelled || generation !== olderGeneration.current) return;
+        if (history.current !== conversation.history_id) {
+          dropOlder(); generation = olderGeneration.current;
+          history.current = conversation.history_id; setHistoryId(conversation.history_id);
+          stickToBottom.current = true; setNewMessages(false); setAway(false);
+        }
         // a 304 hands back the answer already shown: nothing to compare or lay out again
         if (conversation === lastAnswer.current) { setError(null); setErrorStatus(null); return; }
         // The newest page moved past the held start: the turns in between join the older
@@ -490,8 +496,11 @@ export const ChatView = memo(function ChatView({ paneId, refreshKey, connected, 
         let moved: ConversationTurn[] = [];
         if (held !== null && conversation.source !== "scrollback" && typeof conversation.cursor === "string" && conversation.cursor !== held) {
           const between = await turnsBetween(held, conversation.cursor);
-          if (cancelled) return;
-          if (between === null) dropOlder();
+          if (cancelled || generation !== olderGeneration.current) return;
+          if (between === null) {
+            dropOlder(); setState(EMPTY_STATE); signature.current = ""; lastAnswer.current = null;
+            setPollKey((key) => key + 1); return;
+          }
           else { moved = between; heldFrom.current = conversation.cursor; }
         }
         if (moved.length > 0) setOlder((turns) => [...turns, ...moved]);
@@ -515,7 +524,7 @@ export const ChatView = memo(function ChatView({ paneId, refreshKey, connected, 
         // cancelled mid-way (a pane switch, the page hidden during a gap fill) is redone
         lastAnswer.current = conversation;
       } catch (cause) {
-        if (cancelled) return;
+        if (cancelled || generation !== olderGeneration.current) return;
         setLoaded(true);
         setError(cause instanceof Error ? cause.message : String(cause));
         setErrorStatus(cause instanceof ApiError ? cause.status : null);
@@ -537,6 +546,10 @@ export const ChatView = memo(function ChatView({ paneId, refreshKey, connected, 
     try {
       const page = await fetchPaneConversation(paneId, { before });
       if (shownPane.current !== paneId || olderGeneration.current !== generation) return;
+      if (page.history_id !== history.current) {
+        dropOlder(); setState(EMPTY_STATE); signature.current = ""; lastAnswer.current = null;
+        setPollKey((key) => key + 1); return;
+      }
       // a bridge without pages answers with its newest turns: nothing older to add
       if (page.source === "scrollback" || page.cursor === undefined) { setOlderCursor(undefined); setOlderState("idle"); return; }
       const first = heldFrom.current === null;
@@ -549,7 +562,10 @@ export const ChatView = memo(function ChatView({ paneId, refreshKey, connected, 
       if (first) setPollKey((key) => key + 1);
     } catch (cause) {
       if (shownPane.current !== paneId || olderGeneration.current !== generation) return;
-      if (cause instanceof ApiError && cause.status === 409) dropOlder();
+      if (cause instanceof ApiError && cause.status === 409) {
+        dropOlder(); setState(EMPTY_STATE); signature.current = ""; lastAnswer.current = null;
+        setPollKey((key) => key + 1);
+      }
       else setOlderState("failed");
     } finally {
       if (olderGeneration.current === generation) loadingOlder.current = false;
@@ -631,7 +647,7 @@ export const ChatView = memo(function ChatView({ paneId, refreshKey, connected, 
   const todos = useMemo(() => state.source === "conversation" ? todoState(turns) : null, [state.source, turns]);
   const empty = state.source === "conversation" ? turns.length === 0 : state.messages.length === 0;
 
-  return <ChatPaneContext.Provider value={paneId}><div className="chat-view" ref={scroller} onScroll={onScroll} role="log" aria-live="polite" aria-label={t("conversation of {pane}", { pane: paneId })}>
+  return <ChatPaneContext.Provider value={paneId}><ChatHistoryContext.Provider value={historyId ?? ""}><div className="chat-view" ref={scroller} onScroll={onScroll} role="log" aria-live="polite" aria-label={t("conversation of {pane}", { pane: paneId })}>
     <div className="chat-transcript">
       {/* one button in every state: swapping it for a status line of another height would shift the reader */}
       {state.source === "conversation" && typeof olderCursor === "string" && (
@@ -643,7 +659,7 @@ export const ChatView = memo(function ChatView({ paneId, refreshKey, connected, 
       {state.source === "conversation"
         ? turns.map((turn, index) => {
             const last = index === turns.length - 1;
-            return <Turn key={`${turn.role}:${turn.ts ?? index}`} paneId={paneId} turn={turn} live={last && turn.role === "assistant" && agentStatus === "working"} last={last} showThinking={settings.showThinking} />;
+            return <Turn key={`${paneId}:${historyId ?? ""}:${turn.role}:${turn.ts ?? index}`} paneId={paneId} turn={turn} live={last && turn.role === "assistant" && agentStatus === "working"} last={last} showThinking={settings.showThinking} />;
           })
         : agent === "codex"
           ? <details className="chat-terminal-fallback"><summary>{t("Conversation unavailable — show terminal output")}</summary><pre>{state.messages.map((message) => message.text).join("\n\n")}</pre></details>
@@ -658,5 +674,5 @@ export const ChatView = memo(function ChatView({ paneId, refreshKey, connected, 
     </div>
     {newMessages ? <button type="button" className="btn chat-new-messages" onClick={scrollToBottom}>{t("New messages")} <ArrowDown aria-hidden="true" /></button>
       : away && <button type="button" className="btn chat-new-messages is-icon" aria-label={t("Jump to latest")} title={t("Jump to latest")} onClick={scrollToBottom}><ArrowDown aria-hidden="true" /></button>}
-  </div></ChatPaneContext.Provider>;
+  </div></ChatHistoryContext.Provider></ChatPaneContext.Provider>;
 });

@@ -201,6 +201,8 @@ export interface ConversationMetadata {
 
 /** GET /api/pane/conversation: native conversation with settings, or scrollback fallback. */
 export interface ConversationResponse {
+  /** Stable across appends; changes on transcript replacement or native context clear. */
+  history_id?: string;
   source: "claude-transcript" | "omp-transcript" | "omo-transcript" | "gjc-transcript" | "codex-transcript" | "scrollback";
   turns: ConversationTurn[];
   metadata?: ConversationMetadata;

@@ -882,3 +882,34 @@
   max-height: 60vh;
   overflow: auto;
 }
+
+/* Skills remain discoverable when the work rows are folded. */
+.chat-skills {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-2);
+  margin-bottom: var(--space-2);
+}
+.chat-skill {
+  max-width: 100%;
+  border: var(--hairline) solid var(--border);
+  border-radius: var(--radius-md);
+  background: var(--bg-elevated);
+  font-size: var(--fs-xs);
+}
+.chat-skill > summary {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: var(--space-2);
+  padding: var(--space-2);
+  cursor: pointer;
+}
+.chat-skill > summary > svg { width: 14px; height: 14px; flex-shrink: 0; }
+.chat-skill-name { overflow-wrap: anywhere; }
+.chat-skill-status { color: var(--text-dim); }
+.chat-skill.is-error { border-color: var(--status-blocked); }
+.chat-skill-detail { padding: 0 var(--space-2) var(--space-2); overflow-wrap: anywhere; }
+.chat-skill-detail p { margin: 0 0 var(--space-1); color: var(--text-dim); }
+
+.chat-skill[open] .chat-skill-caret { transform: rotate(180deg); }

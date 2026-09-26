@@ -1,4 +1,5 @@
 import type { ConversationPart } from "../../shared/protocol.ts";
+import { turnSkills } from "./skillActivity.ts";
 import { t } from "./i18n.ts";
 
 export type ToolPart = Extract<ConversationPart, { kind: "tool" }>;
@@ -52,11 +53,12 @@ export function workSummary(parts: readonly ConversationPart[]): string {
   let failed = 0;
   for (const part of parts) {
     if (part.kind !== "tool") continue;
-    counts[categorize(part.name)] += 1;
+    if (!part.skill) counts[categorize(part.name)] += 1;
     if (part.error) failed += 1;
   }
   // a failure says so in the folded header: it is what a glance at a finished turn must not miss
-  return [...(Object.keys(counts) as WorkCategory[])
+  const skills = turnSkills(parts).length;
+  return [...(skills > 0 ? [t(skills === 1 ? "{n} skill" : "{n} skills", { n: skills })] : []), ...(Object.keys(counts) as WorkCategory[])
     .filter((category) => counts[category] > 0)
     .map((category) => t(CATEGORY_LABEL[category][counts[category] === 1 ? 0 : 1], { n: counts[category] })),
     ...(failed > 0 ? [t("{n} failed", { n: failed })] : [])]

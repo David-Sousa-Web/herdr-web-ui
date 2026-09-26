@@ -8,6 +8,7 @@ import type { ConversationPart, ConversationTurn, HerdrPane } from "../shared/pr
 import { patchFiles, patchText } from "../shared/patch.ts";
 import { processStartedAt } from "./process-start.ts";
 import { codexImageParts } from "./codex-images.ts";
+import { codexReadCall, codexReadSkills, selectedSkill } from "./skill-activity.ts";
 import { trimOutput } from "./tool-output.ts";
 import { herdrRpc, paneRead, sessionSnapshot } from "./herdr/client.ts";
 
@@ -87,6 +88,8 @@ interface CodexParseState {
   tools: Map<string, Extract<ConversationPart, { kind: "tool" }>>;
   messages: { role: string; text: string; source: string; ts: string; paired: boolean; part: Extract<ConversationPart, { kind: "text" }>; turn: ConversationTurn }[];
   startedAt?: string;
+  skillEvents?: Set<string>;
+  activeTurnId?: string;
 }
 
 /** Complete records are folded once; snapshots detach mutable tools from prior HTTP answers. */
@@ -128,7 +131,25 @@ export function createCodexTranscriptParser(state: CodexParseState = { turns: []
       const payload = record(entry.payload);
       const ts = string(entry.timestamp);
       if (entry.type === "event_msg") {
-        if (payload.type === "task_started") state.startedAt = string(payload.started_at) || ts;
+        if (payload.type === "item_completed" && (!state.activeTurnId || !payload.turn_id || payload.turn_id === state.activeTurnId)) {
+          const item = record(payload.item);
+          const id = string(item.id);
+          const skills = codexReadSkills(item);
+          if (id && skills.length > 0 && !state.skillEvents?.has(id)) {
+            (state.skillEvents ??= new Set()).add(id);
+            if (state.skillEvents.size > 512) state.skillEvents.delete(state.skillEvents.values().next().value!);
+            for (const skill of skills) {
+              const turn = assistant(ts);
+              const existing = [...turn.parts].reverse().find((part) => part.kind === "tool" && part.skill?.path === skill.path);
+              if (existing?.kind === "tool" && existing.skill) existing.skill.status = skill.status;
+              else turn.parts.push({ kind: "skill", skill });
+            }
+          }
+        }
+        if (payload.type === "task_started") {
+          state.startedAt = string(payload.started_at) || ts;
+          state.activeTurnId = string(payload.turn_id) || undefined;
+        }
         if (payload.type === "task_complete" || payload.type === "turn_aborted") {
           const turn = turns.at(-1);
           if (turn?.role === "assistant" && ts) turn.end_ts = ts;
@@ -145,8 +166,19 @@ export function createCodexTranscriptParser(state: CodexParseState = { turns: []
       }
       if (entry.type !== "response_item") continue;
       if (payload.type === "message") {
-        if (payload.role === "user") message("user", contentText(payload.content, true), "response", ts, undefined, codexImageParts(entry));
-        else if (payload.role === "assistant") {
+        if (payload.role === "user") {
+          const content = Array.isArray(payload.content) ? payload.content : [{ type: "input_text", text: payload.content }];
+          const skills = content.flatMap((block) => {
+            const skill = selectedSkill(string(record(block).text));
+            return skill ? [skill] : [];
+          });
+          const visible = content.filter((block) => !selectedSkill(string(record(block).text)));
+          message("user", contentText(visible, true), "response", ts, undefined, codexImageParts(entry));
+          for (const skill of skills) {
+            const turn = assistant(ts);
+            if (!turn.parts.some((part) => part.kind === "skill" && part.skill.name === skill.name && part.skill.path === skill.path)) turn.parts.push({ kind: "skill", skill });
+          }
+        } else if (payload.role === "assistant") {
           const body = contentText(payload.content);
           if (payload.channel === "analysis") {
             if (body.trim()) assistant(ts).parts.push({ kind: "thinking", text: body });
@@ -173,6 +205,8 @@ export function createCodexTranscriptParser(state: CodexParseState = { turns: []
           kind: "tool", name, summary: (string(summary) || name).slice(0, 120),
           input: Object.keys(args).length ? JSON.stringify(args, null, 2) : string(raw), output: "",
         };
+        const skill = codexReadCall(name, args);
+        if (skill) part.skill = skill;
         assistant(ts).parts.push(part);
         if (typeof payload.call_id === "string") tools.set(payload.call_id, part);
       } else if (payload.type === "function_call_output" || payload.type === "custom_tool_call_output") {
@@ -181,6 +215,7 @@ export function createCodexTranscriptParser(state: CodexParseState = { turns: []
         const output = contentText(payload.output);
         trimOutput(tool, output, string(payload.call_id));
         if (codexCallFailed(output)) tool.error = true;
+        if (tool.skill) tool.skill.status = tool.error ? "failed" : "loaded";
         tools.delete(string(payload.call_id));
         const turn = turns.at(-1);
         if (turn?.role === "assistant" && ts) turn.end_ts = ts;

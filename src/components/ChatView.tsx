@@ -1,6 +1,6 @@
 import { createContext, memo, useCallback, useContext, useEffect, useLayoutEffect, useMemo, useRef, useState, type ComponentType } from "react";
 import {
-  ArrowDown, Bot, Brain, Check, ChevronDown, ChevronRight, ChevronUp, Circle, CircleAlert, CircleCheck, CircleDot, CircleSlash, Copy, FilePen, FileSearch, Globe, ListChecks, Terminal, Wrench,
+  ArrowDown, BookOpen, Bot, Brain, Check, ChevronDown, ChevronRight, ChevronUp, Circle, CircleAlert, CircleCheck, CircleDot, CircleSlash, Copy, FilePen, FileSearch, Globe, ListChecks, Terminal, Wrench,
   type LucideProps,
 } from "lucide-react";
 
@@ -10,6 +10,7 @@ import { AgentMark } from "./AgentMark.tsx";
 import { Markdown } from "./Markdown.tsx";
 import { PromptCard } from "./PromptCard.tsx";
 import { useWholeOutput as useScopedOutput } from "../lib/useWholeOutput.ts";
+import { turnSkills } from "../lib/skillActivity.ts";
 import { ApiError } from "../lib/api.ts";
 import { useMachineApi } from "../lib/machineContext.tsx";
 import { toTranscriptMessages, type TranscriptMessage } from "../lib/transcript.ts";
@@ -244,6 +245,7 @@ function ToolInputView({ part }: { part: ToolPartType }) {
 
 function toolIcon(name: string): ComponentType<LucideProps> {
   const normalized = name.toLowerCase();
+  if (normalized === "skill") return BookOpen;
   if (normalized.includes("bash") || normalized.includes("command")) return Terminal;
   if (["read", "glob", "grep"].some((item) => normalized.includes(item))) return FileSearch;
   if (normalized.includes("edit") || normalized.includes("write")) return FilePen;
@@ -308,9 +310,9 @@ function WorkBlockView({ parts, duration, live, defaultOpen, showThinking }: { p
   const t = useT();
   const [chosenOpen, setOpen] = useState<boolean | null>(null);
   const open = chosenOpen ?? defaultOpen;
-  const visible = showThinking ? parts : parts.filter((part) => part.kind !== "thinking");
+  const visible = parts.filter((part) => part.kind !== "skill" && (showThinking || part.kind !== "thinking"));
   if (visible.length === 0) return null;
-  const summary = workSummary(visible);
+  const summary = workSummary(parts);
   const title = live ? t("Working…") : duration !== null ? t("Worked for {duration}", { duration }) : t("Worked");
   return <section className={`work-block${live ? " is-live" : ""}`}>
     <button type="button" className="work-block-head" aria-expanded={open} onClick={() => setOpen(!open)}>
@@ -323,6 +325,25 @@ function WorkBlockView({ parts, duration, live, defaultOpen, showThinking }: { p
         : part.kind === "text" ? <div key={index} className="work-narration"><Markdown>{part.text}</Markdown></div>
           : part.kind === "tool" ? <WorkRow key={index} part={part} /> : null)}</div>}
   </section>;
+}
+
+/** Skill evidence stays visible even when the surrounding work block is folded. */
+function SkillActivityList({ parts }: { parts: ConversationPart[] }) {
+  const t = useT();
+  const skills = turnSkills(parts);
+  if (skills.length === 0) return null;
+  return <div className="chat-skills" role="group" aria-label={t("Skill activity")}>
+    {skills.map((skill) => <details className={`chat-skill${skill.status === "failed" ? " is-error" : ""}`} key={`${skill.evidence}:${skill.path ?? skill.name}`}>
+      <summary><BookOpen aria-hidden="true" /><span className="chat-skill-name">{skill.name}</span><span className="chat-skill-status">{
+        skill.evidence === "invocation"
+          ? skill.status === "failed" ? t("Skill invocation failed") : skill.status === "requested" ? t("Skill requested") : t("Skill invoked")
+          : skill.status === "failed" ? t("Skill read failed") : skill.status === "requested" ? t("Reading skill requested") : t("Skill instructions loaded")
+      }</span><ChevronDown className="chat-skill-caret" aria-hidden="true" /></summary>
+      <div className="chat-skill-detail"><p>{skill.evidence === "invocation" ? t("Recorded by the agent's Skill tool. This does not mean the skill's work is complete.") : t("The transcript records loading this skill's instructions. This does not confirm every step was followed.")}</p>
+        {skill.path && <code>{skill.path}</code>}
+      </div>
+    </details>)}
+  </div>;
 }
 
 /** Image files a message mentions as `@path`, the way this app attaches them: shown as thumbnails. */
@@ -381,6 +402,7 @@ const Turn = memo(function Turn({ paneId, turn, live, last, showThinking }: Turn
   const { work, answer } = splitTurn(turn.parts);
   const answerText = answer.map((part) => part.text).join("\n\n");
   return <article className="chat-turn chat-turn-agent">
+    <SkillActivityList parts={turn.parts} />
     {work.length > 0 && <WorkBlockView parts={work} duration={formatWorkDuration(turn.ts, turn.end_ts ?? null)} live={live} defaultOpen={last} showThinking={showThinking} />}
     {answer.map((part, index) => <Markdown key={index}>{part.text}</Markdown>)}
     {answerText.length > 0 && <div className="chat-turn-meta chat-agent-meta">

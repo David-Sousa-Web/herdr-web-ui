@@ -80,7 +80,7 @@ try {
   await page.screenshot({ path: join(evidence, "desktop-add-pc-dark.png") });
   await dialog.getByRole("button", { name: "Close PC setup" }).click();
   await page.screenshot({ path: join(evidence, "desktop-dark.png") });
-  await page.locator(".app-header").getByRole("button", { name: "Settings", exact: true }).click();
+  await page.locator(".sidebar-footer").getByRole("button", { name: "Settings", exact: true }).click();
   await page.getByRole("dialog", { name: "Settings", exact: true }).getByRole("button", { name: "Light", exact: true }).click();
   await page.getByRole("button", { name: "Close settings", exact: true }).click();
   await page.screenshot({ path: join(evidence, "desktop-light.png") });
@@ -93,7 +93,7 @@ try {
   assert.equal(await page.evaluate(() => document.documentElement.scrollWidth > window.innerWidth), false);
   await page.getByRole("button", { name: "Close PC setup" }).click();
   await page.getByRole("button", { name: "Close workspace list", exact: true }).click();
-  await page.locator(".app-header").getByRole("button", { name: "Settings", exact: true }).click();
+  await page.locator(".sidebar-footer").getByRole("button", { name: "Settings", exact: true }).click();
   const settings = page.getByRole("dialog", { name: "Settings", exact: true });
   await settings.getByRole("button", { name: "Dark", exact: true }).click();
   await settings.getByRole("button", { name: "Close settings", exact: true }).click();

@@ -7,6 +7,8 @@ between releases do not reach them. Remote-PC runtime bundles are versioned sepa
 
 ## [Unreleased]
 
+## [0.3.24] - 2026-09-27
+
 ### Changed
 - The installer's addresses are links a terminal can open with a click (OSC 8), plain text when
   the output goes to a file or log. It also names this PC's Tailscale IP next to the phone address,
@@ -515,7 +517,8 @@ First public version.
 - Installable PWA, a mobile key bar, web push alerts and optional token auth.
 - Distribution as a herdr plugin.
 
-[Unreleased]: https://github.com/devswha/herdr-web-ui/compare/v0.3.23...HEAD
+[Unreleased]: https://github.com/devswha/herdr-web-ui/compare/v0.3.24...HEAD
+[0.3.24]: https://github.com/devswha/herdr-web-ui/compare/v0.3.23...v0.3.24
 [0.3.23]: https://github.com/devswha/herdr-web-ui/compare/v0.3.22...v0.3.23
 [0.3.22]: https://github.com/devswha/herdr-web-ui/compare/v0.3.21...v0.3.22
 [0.3.21]: https://github.com/devswha/herdr-web-ui/compare/v0.3.20...v0.3.21

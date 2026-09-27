@@ -102,7 +102,7 @@ export function PromptCard({ paneId, prompt, onPromptChanged, onAnswered, typedA
       </div>
       {prompt.multi_select && (
         <button type="button" className="btn btn-primary prompt-card-submit" disabled={pending || selected.size === 0} onClick={() => void answer({ option_indices: [...selected].sort((a, b) => a - b) })}>
-          Submit
+          {t("Submit")}
         </button>
       )}
       {prompt.custom_option_index !== null && (
@@ -111,7 +111,7 @@ export function PromptCard({ paneId, prompt, onPromptChanged, onAnswered, typedA
             if (event.key === "Enter" && custom.trim().length > 0) void answer({ custom_text: custom.trim() });
           }} />
           <button type="button" className="btn btn-primary" disabled={pending || custom.trim().length === 0} onClick={() => void answer({ custom_text: custom.trim() })}>
-            <Send aria-hidden="true" /> Send
+            <Send aria-hidden="true" /> {t("Send")}
           </button>
         </div>
       )}

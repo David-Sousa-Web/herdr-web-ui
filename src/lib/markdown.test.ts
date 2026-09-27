@@ -1,7 +1,24 @@
 import { describe, expect, it } from "bun:test";
+import { createElement } from "react";
+import { renderToStaticMarkup } from "react-dom/server";
+import { Markdown } from "../components/Markdown.tsx";
+import { SettingsProvider } from "./settings.ts";
 import { FOLD_CODE_AFTER_LINES, FOLDED_CODE_LINES, foldCode, parseInline, parseMarkdown, safeMarkdownHref, type InlineNode } from "./markdown.ts";
 
 describe("parseMarkdown", () => {
+  it("renders inline and display math while leaving fenced code untouched", () => {
+    const languages = Object.getOwnPropertyDescriptor(navigator, "languages");
+    Object.defineProperty(navigator, "languages", { configurable: true, value: ["en"] });
+    try {
+      const html = renderToStaticMarkup(createElement(SettingsProvider, { children: createElement(Markdown, { children: "\\(x_i\\)\n\n\\[\\mathrm{ECA@}k=\\frac{1}{N}\\sum_i\\mathbf{1}[\\text{예측}_i=\\text{정답}_i]\\]" }) }));
+      expect(html).toContain("katex-display");
+      expect(html).toContain("katex-html");
+      expect(html).not.toContain("katex-error");
+    } finally {
+      if (languages) Object.defineProperty(navigator, "languages", languages);
+      else Reflect.deleteProperty(navigator, "languages");
+    }
+  });
   it("parses level one through three headings", () => {
     expect(parseMarkdown("# One\n## Two\n### Three").map((block) => block.type === "heading" ? block.level : null)).toEqual([1, 2, 3]);
   });
@@ -18,6 +35,14 @@ describe("parseMarkdown", () => {
 
   it("keeps fenced code and its language", () => {
     expect(parseMarkdown("```ts\nconst x = 1;\n```")).toEqual([{ type: "code", language: "ts", value: "const x = 1;" }]);
+  });
+
+  it("recognizes display math without parsing its contents as markdown", () => {
+    const formula = "\\[\n\\mathrm{ECA@}k = \\frac{1}{N}\\sum_i \\mathbf{1}[\\text{예측}_i=\\text{정답}_i]\\,\\prod_j\\mathbf{1}[|F_i\\cap I_{ij}|\\ge k]\n\\]";
+    expect(parseMarkdown(formula)).toEqual([{ type: "math", value: formula.slice(3, -3) }]);
+    expect(parseMarkdown("before\n\\[x^2\\]\nafter").map((block) => block.type)).toEqual(["paragraph", "math", "paragraph"]);
+    expect(parseMarkdown("```tex\n\\[x\\]\n```")).toEqual([{ type: "code", language: "tex", value: "\\[x\\]" }]);
+    expect(parseMarkdown("\\[unfinished")).toEqual([{ type: "paragraph", lines: [[{ type: "text", value: "\\[unfinished" }]] }]);
   });
 
   it("parses a GFM table", () => {
@@ -83,6 +108,16 @@ describe("inline markdown", () => {
     expect(parseInline("`code` **bold** *italic* ~~gone~~").map((node) => node.type)).toEqual([
       "code", "text", "strong", "text", "em", "text", "del",
     ]);
+  });
+
+  it("renders inline math in prose but not in code spans", () => {
+    expect(parseInline("Result \\(x_i + \\frac{1}{N}\\) and `\\(raw\\)`")).toEqual([
+      { type: "text", value: "Result " },
+      { type: "math", value: "x_i + \\frac{1}{N}" },
+      { type: "text", value: " and " },
+      { type: "code", value: "\\(raw\\)" },
+    ]);
+    expect(parseInline("\\(unfinished")).toEqual([{ type: "text", value: "\\(unfinished" }]);
   });
 
   it("preserves underscores in identifiers while retaining standalone emphasis", () => {

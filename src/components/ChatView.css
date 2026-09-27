@@ -158,6 +158,13 @@
 .markdown > :first-child { margin-top: 0; }
 .markdown > :last-child { margin-bottom: 0; }
 
+.markdown-math-display {
+  display: block;
+  max-width: 100%;
+  overflow-x: auto;
+  margin-bottom: var(--space-3);
+}
+
 .markdown p,
 .markdown h1,
 .markdown h2,

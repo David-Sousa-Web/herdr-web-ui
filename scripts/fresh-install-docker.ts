@@ -81,7 +81,13 @@ async function oneLineInstall(): Promise<void> {
   const again = await step("install.sh again: keeps what is there", () => asUser(`cat /tmp/install.sh | sh 2>&1; echo "exit=$?"`));
   assert.match(again, /exit=0/, again.slice(-1500));
   assert.match(again, /already installed/);
-  assert.match(again, /already running/);
+  assert.doesNotMatch(again, /not running yet/, "the app is up");
+  // the usual case: herdr already runs, and builds the plugin with its own PATH, not install.sh's
+  await asUser("herdr plugin uninstall devswha.herdr-web-ui >/dev/null 2>&1; curl -sf http://127.0.0.1:7317/api/health >/dev/null && pkill -f server/managed.ts; true");
+  const running = await step("install.sh with herdr running: builds, starts and waits", () => asUser(`cat /tmp/install.sh | HERDR_WEB_UI_REF=${ref} sh 2>&1; echo "exit=$?"`));
+  assert.match(running, /exit=0/, running.slice(-2500));
+  assert.match(running, /Installed /, running.slice(-2500));
+  assert.doesNotMatch(running, /not running yet|did not start/, running.slice(-1500));
   console.log(`\nA bare Ubuntu 24.04 goes from one line to a running herdr web ui. install.sh said:\n${out.split("\n").filter((line) => /^herdr web ui|Installed /.test(line)).map((l) => `  ${l.trim()}`).join("\n")}`);
 }
 

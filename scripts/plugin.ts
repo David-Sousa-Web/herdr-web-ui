@@ -4,7 +4,8 @@
  * herdr's startup hooks are one-shot initialization commands, not supervised
  * daemons (https://herdr.dev/docs/plugins/), so this script owns the process:
  * `start` detaches the server and records its pid under HERDR_PLUGIN_STATE_DIR,
- * `stop` takes it down, `status` reports, `pair` prints a pairing code for another device. Start is idempotent — a server that is
+ * `stop` takes it down, `status` reports, `pair` prints a pairing code for another device, `phone`
+ * publishes the app to the user's tailnet and prints its address as a QR code. Start is idempotent — a server that is
  * already answering on the port is left alone, which is what makes it safe as
  * both a startup hook and a hand-invoked action.
  *
@@ -17,12 +18,13 @@
 
 import { spawn } from "node:child_process";
 import { existsSync, mkdirSync, openSync, readFileSync, rmSync, writeFileSync } from "node:fs";
-import { homedir } from "node:os";
+import { homedir, platform } from "node:os";
 import { join } from "node:path";
 
 import qrcode from "qrcode-generator";
 
 import { DEFAULT_PORT } from "../shared/protocol.ts";
+import { parseTailscale, parseTailscaleIp, parseTailscaleOwner, readTailscale, tailscaleBinary } from "../server/tailscale.ts";
 
 const ROOT = process.env["HERDR_PLUGIN_ROOT"] ?? import.meta.dir.replace(/\/scripts$/, "");
 const STATE_DIR = process.env["HERDR_PLUGIN_STATE_DIR"] ?? join(homedir(), ".local", "state", "herdr-web-ui");
@@ -31,6 +33,10 @@ const PID_FILE = join(STATE_DIR, "server.pid");
 const LOG_FILE = join(STATE_DIR, "server.log");
 /** the server needs a moment to bind and open its first herdr connection */
 const READY_TIMEOUT_MS = 20_000;
+/** `tailscale serve` waits while the user turns HTTPS on for the tailnet at the link it prints */
+const SERVE_TIMEOUT_MS = 180_000;
+/** how to come back to `phone` once Tailscale is set up: an action's output goes to herdr's log, not a terminal */
+const PHONE_AGAIN = "curl -fsSL https://devswha.github.io/herdr-web-ui/install.sh | sh";
 
 /**
  * Run by hand (`pair` on a headless PC), herdr's env is not there to name the config dir:
@@ -68,6 +74,30 @@ const port = Number(env["PORT"] ?? DEFAULT_PORT);
 const host = env["HOST"] ?? "127.0.0.1";
 const origin = `http://${host === "0.0.0.0" ? "127.0.0.1" : host}:${port}`;
 
+/**
+ * herdr's PATH plus where the one-line installer (install.sh) puts Bun, Node and herdr: herdr may
+ * have been started from a shell that has none of them, and the server spawns `node` for every
+ * terminal. Appended, so a Node the user chose (nvm, Homebrew) still comes first.
+ */
+function toolPath(): string {
+  const current = (env["PATH"] ?? "").split(":").filter(Boolean);
+  const home = homedir();
+  const extra = [join(home, ".bun", "bin"), join(home, ".local", "bin"), join(home, ".local", "share", "herdr-web-ui", "node", "bin")];
+  return [...current, ...extra.filter((dir) => existsSync(dir) && !current.includes(dir))].join(":");
+}
+
+/** A clickable address where a terminal shows it (OSC 8), plain where the output goes to a log or a file. */
+function link(url: string): string {
+  return process.stdout.isTTY ? `\x1b]8;;${url}\x1b\\${url}\x1b]8;;\x1b\\` : url;
+}
+
+function qr(text: string): string {
+  const code = qrcode(0, "M");
+  code.addData(text);
+  code.make();
+  return code.createASCII(1, 1);
+}
+
 async function health(): Promise<boolean> {
   try {
     const response = await fetch(`${origin}/api/health`, { signal: AbortSignal.timeout(1500) });
@@ -102,6 +132,7 @@ async function start(): Promise<number> {
     stdio: ["ignore", log, log],
     env: {
       ...env,
+      PATH: toolPath(),
       HOST: host,
       PORT: String(port),
       // herdr hands the plugin HERDR_SOCKET_PATH; the server (and the attach it
@@ -173,15 +204,78 @@ async function pair(): Promise<number> {
   } catch { /* an older server: the code alone */ }
   const out: string[] = [`Pairing code: ${code.slice(0, 3)} ${code.slice(3)}   (good for 10 minutes, for one device)`];
   if (url !== null) {
-    out.push(`On the other device, open ${url} and enter the code, or scan this to open it with the code filled in:`, "");
-    const qr = qrcode(0, "M");
-    qr.addData(`${url}/?pair=${code}`);
-    qr.make();
-    out.push(qr.createASCII(1, 1));
+    out.push(`On the other device, open ${link(url)} and enter the code, or scan this to open it with the code filled in:`, "");
+    out.push(qr(`${url}/?pair=${code}`));
   } else {
     out.push("On the other device, open the app's address and enter the code. Settings → Phone, on any signed-in device, shows the address and how to get one.");
   }
   process.stdout.write(out.join("\n") + "\n");
+  return 0;
+}
+
+/**
+ * The address a phone opens, as a QR code. When Tailscale runs on this PC but does not yet serve
+ * the app, this is the one place that changes it: `tailscale serve` of the app's port on the first
+ * free HTTPS port, said out loud with the command that undoes it. Everything else only reads.
+ * Run by install.sh (and by hand); neither the server nor startup ever calls it.
+ */
+async function phone(): Promise<number> {
+  const say = (line = "") => process.stdout.write(line + "\n");
+  const running = await health();
+  say(`herdr web ui on this PC: ${link(origin)}${running ? "" : " (not running yet: it starts with herdr)"}`);
+  if (!["127.0.0.1", "0.0.0.0", "localhost"].includes(host)) {
+    say(`HOST is ${host}, so Tailscale, which serves 127.0.0.1, is left alone. On the phone, open ${link(`http://${host}:${port}`)}.`);
+    return 0;
+  }
+  const binary = tailscaleBinary();
+  let output = await readTailscale(binary);
+  let access = parseTailscale(output, port);
+  if (binary === null || access.state === "missing") {
+    say("For your phone: install Tailscale on this PC and on the phone (https://tailscale.com/download),");
+    say(`sign in to the same account on both, then run: ${PHONE_AGAIN}`);
+    return 0;
+  }
+  if (access.state === "stopped") {
+    say(`For your phone: Tailscale is installed but not signed in. Run \`tailscale up\` (or open the Tailscale app), then run: ${PHONE_AGAIN}`);
+    return 0;
+  }
+  let published = false;
+  if (access.serving_url === null) {
+    if (access.serve_command === null) {
+      say("Tailscale on this PC already uses every HTTPS port this would take (443, 8443, 7317, 17317). Settings → Phone shows what to do.");
+      return 0;
+    }
+    say(`Publishing the app to your tailnet: ${access.serve_command}`);
+    const [, ...args] = access.serve_command.split(" ");
+    const serve = Bun.spawn([binary, ...args.slice(0, 1), "--yes", ...args.slice(1)], { stdin: "ignore", stdout: "inherit", stderr: "inherit" });
+    const timer = setTimeout(() => serve.kill(), SERVE_TIMEOUT_MS);
+    const code = await serve.exited;
+    clearTimeout(timer);
+    if (code !== 0) {
+      say(`Tailscale did not take it (exit ${code}).${platform() === "linux" ? " On Linux, let your user change Tailscale once with `sudo tailscale set --operator=$USER`," : ""}`);
+      say(`then run: ${PHONE_AGAIN}   Or run the command above yourself.`);
+      return 1;
+    }
+    output = await readTailscale(binary);
+    access = parseTailscale(output, port);
+    published = true;
+  }
+  const url = access.serving_url;
+  if (url === null) {
+    say("Tailscale accepted the command, but does not report the address yet. Settings → Phone shows it once it does.");
+    return 1;
+  }
+  const httpsPort = new URL(url).port || "443";
+  if (published) say(`Tailscale now serves ${url} → http://127.0.0.1:${port}, for your tailnet only. To undo: tailscale serve --https=${httpsPort} off`);
+  const owner = parseTailscaleOwner(output?.status ?? null);
+  const ip = parseTailscaleIp(output?.status ?? null);
+  say("");
+  say(`On your phone: ${link(url)}`);
+  // the name, not the IP, is what the HTTPS certificate is for: https://100.x.y.z would warn
+  if (ip !== null) say(`Tailscale IP of this PC: ${ip}. Open the name above, not the IP: the HTTPS certificate is for the name.`);
+  say(`Scan this with a phone signed in to Tailscale${owner === null ? "" : ` as ${owner}`}; that login gets in without a code.`);
+  say("Anyone else on your tailnet needs a pairing code: Settings → Devices, or the pair command.");
+  say(qr(url));
   return 0;
 }
 
@@ -198,7 +292,8 @@ if (command === "start") process.exit(await start());
 else if (command === "stop") process.exit(stop());
 else if (command === "status") process.exit(await status());
 else if (command === "pair") process.exit(await pair());
+else if (command === "phone") process.exit(await phone());
 else {
-  process.stderr.write(`usage: bun scripts/plugin.ts <start|stop|status|pair>\n`);
+  process.stderr.write(`usage: bun scripts/plugin.ts <start|stop|status|pair|phone>\n`);
   process.exit(2);
 }

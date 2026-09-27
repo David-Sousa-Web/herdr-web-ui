@@ -1,10 +1,20 @@
 import { describe, expect, it } from "bun:test";
-import { parseTailscale } from "./tailscale.ts";
+import { parseTailscale, parseTailscaleIp } from "./tailscale.ts";
 
 const status = (state = "Running", dns = "pc.example.ts.net.") => JSON.stringify({ BackendState: state, Self: { DNSName: dns } });
 /** a `tailscale serve status --json` document: listeners by port, and one "/" proxy per host:port */
 const serve = (tcp: Record<string, { HTTPS?: boolean; HTTP?: boolean }>, web: Record<string, string>) =>
   JSON.stringify({ TCP: tcp, Web: Object.fromEntries(Object.entries(web).map(([key, proxy]) => [key, { Handlers: { "/": { Proxy: proxy } } }])) });
+
+describe("parseTailscaleIp", () => {
+  it("picks this PC's IPv4 tailnet address, and nothing when there is none", () => {
+    expect(parseTailscaleIp(JSON.stringify({ Self: { TailscaleIPs: ["fd7a:115c:a1e0::1", "100.64.0.7"] } }))).toBe("100.64.0.7");
+    expect(parseTailscaleIp(JSON.stringify({ Self: { TailscaleIPs: ["fd7a:115c:a1e0::1"] } }))).toBeNull();
+    expect(parseTailscaleIp(JSON.stringify({ Self: {} }))).toBeNull();
+    expect(parseTailscaleIp("not json")).toBeNull();
+    expect(parseTailscaleIp(null)).toBeNull();
+  });
+});
 
 describe("parseTailscale", () => {
   it("reports a PC without the CLI", () => {

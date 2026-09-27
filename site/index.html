@@ -258,9 +258,9 @@
           <p class="lede">Read them as a chat, drop into the live terminal, and answer when they ask. The panes you already run in <a href="https://herdr.dev">herdr</a>, from any screen.</p>
 
           <div class="install" id="install">
-            <pre class="cmd"><code><span class="prompt" aria-hidden="true">$</span>herdr plugin install devswha/herdr-web-ui<span class="cursor" aria-hidden="true"></span></code><button type="button" class="btn copy" data-copy="herdr plugin install devswha/herdr-web-ui">Copy</button></pre>
+            <pre class="cmd"><code><span class="prompt" aria-hidden="true">$</span>curl -fsSL https://devswha.github.io/herdr-web-ui/install.sh | sh<span class="cursor" aria-hidden="true"></span></code><button type="button" class="btn copy" data-copy="curl -fsSL https://devswha.github.io/herdr-web-ui/install.sh | sh">Copy</button></pre>
             <p class="try"><a class="btn btn-try" href="demo/">Try it in your browser first</a><span>The app on a fictional session, no install. Nothing in it is live.</span></p>
-            <p class="after">Then open <code>http://localhost:7317</code>. It needs a running herdr 0.9.0+, Bun 1.4+ and Node 18+, and it starts with herdr from then on. <a href="https://github.com/devswha/herdr-web-ui#quick-start">Run it from a checkout instead</a>, or hand <a href="https://github.com/devswha/herdr-web-ui/blob/main/INSTALL.md">INSTALL.md</a> to a coding agent.</p>
+            <p class="after">It installs what is missing (herdr, Bun, Node) for your user, then the herdr plugin, and prints your phone's address as a QR code when Tailscale runs on this PC. Then open <code>http://localhost:7317</code>; it starts with herdr from then on. Have herdr, Bun and Node already? <code>herdr plugin install devswha/herdr-web-ui</code> is the plugin alone. <a href="https://github.com/devswha/herdr-web-ui#quick-start">Run it from a checkout instead</a>, or hand <a href="https://github.com/devswha/herdr-web-ui/blob/main/INSTALL.md">INSTALL.md</a> to a coding agent.</p>
           </div>
 
           <div class="demos">

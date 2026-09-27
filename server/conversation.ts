@@ -1,7 +1,7 @@
 /**
  * Agent session transcripts -> structured conversation turns.
  *
- * Four stores are recognized, all provider-native and read-only:
+ * The recognized stores are provider-native and read-only:
  * - Codex: native rollout JSONL, resolved by session metadata/open descriptors
  *   or a unique pane-text match for shared app-server TUIs (codex.ts).
  * - Claude Code: herdr's agent.get names the session id, the transcript lives
@@ -10,9 +10,10 @@
  *   ~/.omp/agent/sessions/<cwd-slug>/ — same shape of truth, one less hop.
  * - omo: herdr knows nothing about its store and its label for the pane flips
  *   between `pi` and `claude` as omo spawns model CLIs, so the pane's process
- *   tree routes it and the transcript is resolved from the store's own layout
+ *   tree routes it and process/session evidence selects a unique transcript
  *   under ~/.omo/agent/sessions/<cwd-slug>/. It writes omp's session shape, so
  *   parseOmpTranscript reads it.
+ * - gjc: open descriptors or its cwd-scoped store, also in omp session format.
  *
  * This module turns those files into the conversation the chat lens renders;
  * the pty stays the input path. Pure parsing lives in parseClaudeTranscript /
@@ -26,9 +27,16 @@ import { join } from "node:path";
 
 import type { ConversationMetadata, ConversationPart, ConversationTurn, HerdrPane, SessionSnapshot } from "../shared/protocol.ts";
 import { herdrRpc, sessionSnapshot } from "./herdr/client.ts";
-import { codexHistorySegments, codexOutputText, codexTranscriptPath, defaultCodexHome, parseCodexTranscript, readRange } from "./codex.ts";
+import { codexHistorySegments, createCodexTranscriptParser, codexOutputText, codexTranscriptPath, defaultCodexHome, parseCodexTranscript, readRange } from "./codex.ts";
+import { CODEX_IMAGE_REF, codexTranscriptImage } from "./codex-images.ts";
+import { isOmoProcess, omoTranscriptForPane } from "./omo.ts";
 import { trimOutput } from "./tool-output.ts";
 import { parseConversationMetadata } from "./conversation-metadata.ts";
+
+import { invokedSkill } from "./skill-activity.ts";
+import { isContextClear, piMessage, piResults } from "./transcript-records.ts";
+
+export { isOmoProcess } from "./omo.ts";
 
 /** Enough turns for a conversation. */
 export const MAX_TURNS = 100;
@@ -68,9 +76,14 @@ function isCommandEntry(text: string): boolean {
  * tell it from typed text; its own TUI shows only the text, and so does the chat.
  */
 export function unwrapPastes(text: string): string {
-  return text
-    .replace(/<pasted_content(?:\s[^>]*)?>\n?([\s\S]*?)\n?<\/pasted_content(?:\s[^>]*)?>/g, "$1")
-    .replace(/^\n+|\n+$/g, "");
+  let changed = false;
+  const visible = text.replace(/<pasted_content id="([^"\r\n]+)">\r?\n([\s\S]*?)\r?\n<\/pasted_content id="([^"\r\n]+)">/g,
+    (whole: string, opening: string, body: string, closing: string) => {
+      if (opening !== closing || opening.length > 64 || !/^[\w-]+$/.test(opening)) return whole;
+      changed = true;
+      return body;
+    });
+  return changed ? visible.replace(/^\n+|\n+$/g, "") : text;
 }
 
 /** The one-line summary a collapsed tool chip shows. */
@@ -93,12 +106,6 @@ function claudeResultText(output: unknown): string {
   return typeof output === "string" ? output
     : Array.isArray(output) ? output.map((part) => (typeof part === "object" && part !== null && "text" in part ? String((part as { text: unknown }).text) : "")).join("")
       : "";
-}
-
-function ompResultText(content: unknown): string {
-  return Array.isArray(content)
-    ? content.map((part) => (typeof part === "object" && part !== null && typeof (part as { text?: unknown }).text === "string" ? (part as { text: string }).text : "")).join("")
-    : "";
 }
 
 /** The image types a chat shows; anything else stays out of the page. */
@@ -131,6 +138,7 @@ export function parseClaudeTranscript(text: string, maxTurns = MAX_TURNS): Conve
       continue; // a torn tail line while Claude is mid-append
     }
     if (entry === null || typeof entry !== "object" || entry.isMeta) continue;
+    if (isContextClear(entry, "claude-transcript")) { turns.length = 0; pending.clear(); continue; }
     const content = entry.message?.content;
     // a compaction's summary marks where the conversation was folded, readable on request
     if (entry.isCompactSummary) {
@@ -161,6 +169,7 @@ export function parseClaudeTranscript(text: string, maxTurns = MAX_TURNS): Conve
         pending.delete(result.tool_use_id);
         trimOutput(tool, claudeResultText(result.content), result.tool_use_id);
         if (result.is_error === true) tool.error = true;
+        if (tool.skill) tool.skill.status = result.is_error === true ? "failed" : "loaded";
       }
       // an image pasted into the prompt: named here, fetched only when shown
       const images: ConversationPart[] = typeof entry.uuid !== "string" ? [] : content.flatMap((block: unknown, index: number) => {
@@ -192,6 +201,8 @@ export function parseClaudeTranscript(text: string, maxTurns = MAX_TURNS): Conve
             input: JSON.stringify(input, null, 2),
             output: "",
           };
+          const skill = invokedSkill(b.name, input);
+          if (skill) { part.skill = skill; part.summary = skill.name; }
           turn.parts.push(part);
           pending.set(String((block as { id?: unknown }).id ?? ""), part);
         }
@@ -201,21 +212,6 @@ export function parseClaudeTranscript(text: string, maxTurns = MAX_TURNS): Conve
   }
 
   return turns.filter((turn) => turn.parts.length > 0).slice(-maxTurns);
-}
-
-/** An omp session line's message shape (only the fields we read). */
-interface OmpEntry {
-  type?: string;
-  timestamp?: string;
-  message?: {
-    role?: string;
-    content?: unknown;
-    toolCallId?: string;
-    /** on a toolResult: the call failed */
-    isError?: unknown;
-    stopReason?: unknown;
-    errorMessage?: unknown;
-  };
 }
 
 /**
@@ -242,15 +238,27 @@ export function parseOmpTranscript(text: string, maxTurns = MAX_TURNS): Conversa
 
   for (const line of text.split("\n")) {
     if (line.trim().length === 0) continue;
-    let entry: OmpEntry;
+    let entry: unknown;
     try {
-      entry = JSON.parse(line) as OmpEntry;
+      entry = JSON.parse(line);
     } catch {
       continue; // a torn tail line while omp is mid-append
     }
     if (entry === null || typeof entry !== "object") continue;
-    if (entry.type !== "message" || entry.message == null) continue; // title/session headers
-    const message = entry.message;
+    if (isContextClear(entry, "omp-transcript")) { turns.length = 0; pending.clear(); continue; }
+    const message = piMessage(entry);
+    if (message === null) continue;
+    const timestamp = (entry as { timestamp?: string }).timestamp;
+    const applyResults = () => {
+      for (const result of piResults(message)) {
+        const tool = pending.get(result.id);
+        if (!tool) continue;
+        pending.delete(result.id);
+        trimOutput(tool, result.text, result.id);
+        if (result.error) tool.error = true;
+      }
+    };
+    if (message.role !== "assistant") applyResults();
 
     if (message.role === "user") {
       const prompt =
@@ -261,23 +269,13 @@ export function parseOmpTranscript(text: string, maxTurns = MAX_TURNS): Conversa
               .filter((part) => part.length > 0)
               .join("\n");
       if (prompt.length === 0) continue; // image-only user parts have no text to show
-      turns.push({ role: "user", ts: entry.timestamp ?? null, parts: [{ kind: "text", text: prompt }] });
-      continue;
-    }
-
-    if (message.role === "toolResult") {
-      if (typeof message.toolCallId !== "string") continue;
-      const tool = pending.get(message.toolCallId);
-      if (tool === undefined) continue;
-      pending.delete(message.toolCallId);
-      trimOutput(tool, ompResultText(message.content), message.toolCallId);
-      if (message.isError === true) tool.error = true;
+      turns.push({ role: "user", ts: timestamp ?? null, parts: [{ kind: "text", text: prompt }] });
       continue;
     }
 
     if (message.role === "assistant" && Array.isArray(message.content)) {
-      const turn = assistantTurn(entry.timestamp);
-      if (entry.timestamp) turn.end_ts = entry.timestamp;
+      const turn = assistantTurn(timestamp);
+      if (timestamp) turn.end_ts = timestamp;
       for (const block of message.content) {
         if (typeof block !== "object" || block === null) continue;
         const b = block as { type?: string; text?: unknown; thinking?: unknown; name?: unknown; id?: unknown; arguments?: unknown; intent?: unknown };
@@ -301,6 +299,8 @@ export function parseOmpTranscript(text: string, maxTurns = MAX_TURNS): Conversa
         }
         // unsupported transcript parts are intentionally ignored
       }
+      // A provider can place a result beside its call in the same assistant record.
+      applyResults();
       // a failed request (a 401, an overloaded provider) leaves an empty message: without its
       // error the chat showed the prompt with no answer at all
       if (message.stopReason === "error" && typeof message.errorMessage === "string" && message.errorMessage.length > 0) {
@@ -337,6 +337,7 @@ export type RecognizedConversation = {
   metadata: ConversationMetadata;
   /** the first turn's position, for the page before it; null at the conversation's beginning */
   cursor: string | null;
+  history_id: string;
   /** changes whenever the answer could: the route's ETag, so an unchanged poll costs no body */
   version: string;
 };
@@ -365,9 +366,23 @@ interface TranscriptStream {
   id: string;
   files: { path: string; start: number; length: number }[];
   length: number;
+  floor: number;
 }
 
-function transcriptStream(source: RecognizedConversation["source"], path: string, stat: { dev: number; ino: number; size: number }, codexHome: string): TranscriptStream {
+// In-place rewrites keep the inode. Change the cursor generation when observed,
+// invalidating settled turns and incremental parsers as well as the response cache.
+const transcriptRevisions = new Map<string, { identity: string; size: number; changed: string; generation: string }>();
+function transcriptGeneration(path: string, stat: { dev: number; ino: number; size: number; mtimeMs: number; ctimeMs: number }): string {
+  const identity = `${stat.dev}:${stat.ino}`;
+  const changed = `${stat.mtimeMs}:${stat.ctimeMs}`;
+  const previous = transcriptRevisions.get(path);
+  const rewritten = previous && previous.identity === identity && (stat.size < previous.size || (stat.size === previous.size && changed !== previous.changed));
+  const generation = rewritten ? randomUUID() : previous?.identity === identity ? previous.generation : "";
+  remember(transcriptRevisions, path, { identity, size: stat.size, changed, generation }, 64);
+  return generation ? `-${generation}` : "";
+}
+
+function transcriptStream(source: RecognizedConversation["source"], path: string, stat: { dev: number; ino: number; size: number; mtimeMs: number; ctimeMs: number }, codexHome: string): TranscriptStream {
   // (a chain whose parent was archived since comes back shorter: codexHistorySegments)
   const segments = source === "codex-transcript" ? codexHistorySegments(path, codexHome) : [{ path, end: stat.size }];
   const files: TranscriptStream["files"] = [];
@@ -386,7 +401,7 @@ function transcriptStream(source: RecognizedConversation["source"], path: string
     return `${file.path}\0${file.length}\0${identity ? `${identity.dev}:${identity.ino}` : "-"}`;
   });
   const chain = earlier.length === 0 ? "" : `-${createHash("sha256").update(earlier.join("\n")).digest("base64url").slice(0, 10)}`;
-  return { id: `${stat.dev.toString(36)}-${stat.ino.toString(36)}${chain}`, files, length: start };
+  return { id: `${stat.dev.toString(36)}-${stat.ino.toString(36)}${chain}${transcriptGeneration(path, stat)}`, files, length: start, floor: 0 };
 }
 
 function readStream(stream: TranscriptStream, from: number, to: number): Buffer {
@@ -406,13 +421,52 @@ function readStream(stream: TranscriptStream, from: number, to: number): Buffer 
   return Buffer.concat(chunks);
 }
 
+/** Reset markers are small native control records. Scan each appended byte once,
+ * in bounded chunks; retain offsets, never a session-sized string. */
+const clearScans = new Map<string, { id: string; scanned: number; floor: number; tail: string }>();
+function applyHistoryBoundary(path: string, stream: TranscriptStream, source: RecognizedConversation["source"]): void {
+  if (source === "codex-transcript") return;
+  let scan = clearScans.get(path);
+  if (!scan || scan.id !== stream.id || scan.scanned > stream.length || bytesBefore(stream, scan.scanned) !== scan.tail) {
+    scan = { id: stream.id, scanned: 0, floor: 0, tail: "" };
+  }
+  let position = scan.scanned;
+  let carry = Buffer.alloc(0);
+  let skipping = false;
+  const isClear = (line: Buffer): boolean => {
+    if (!line.includes(source === "claude-transcript" ? "/clear" : "context_clear")) return false;
+    try { return isContextClear(JSON.parse(line.toString("utf8")), source); } catch { return false; }
+  };
+  while (position < stream.length) {
+    const end = Math.min(stream.length, position + TRANSCRIPT_WINDOW_BYTES);
+    const bytes = Buffer.concat([carry, readStream(stream, position, end)]);
+    const base = position - carry.length;
+    let offset = 0;
+    for (let newline = bytes.indexOf(0x0a); newline !== -1; newline = bytes.indexOf(0x0a, offset)) {
+      if (!skipping && isClear(bytes.subarray(offset, newline))) scan.floor = base + offset;
+      skipping = false;
+      offset = newline + 1;
+      scan.scanned = base + offset;
+    }
+    carry = bytes.subarray(offset);
+    // An oversized data record cannot be a native clear control envelope.
+    if (carry.length > METADATA_HEAD_BYTES) { carry = Buffer.alloc(0); skipping = true; }
+    position = end;
+  }
+  scan.tail = bytesBefore(stream, scan.scanned);
+  remember(clearScans, path, scan, 32);
+  // A valid final JSON object is visible before its newline; rescan it on append.
+  stream.floor = !skipping && carry.length > 0 && isClear(carry) ? stream.length - carry.length : scan.floor;
+  if (stream.floor > 0) stream.id += `-clear-${stream.floor.toString(36)}`;
+}
+
 /** Bytes that every line opening a turn contains: a cheap filter before JSON.parse. */
 const TURN_MARK: Record<RecognizedConversation["source"], Buffer> = {
   "codex-transcript": Buffer.from('"task_started"'),
-  "claude-transcript": Buffer.from('"type":"user"'),
-  "omp-transcript": Buffer.from('"role":"user"'),
-  "omo-transcript": Buffer.from('"role":"user"'),
-  "gjc-transcript": Buffer.from('"role":"user"'),
+  "claude-transcript": Buffer.from('"user"'),
+  "omp-transcript": Buffer.from('"user"'),
+  "omo-transcript": Buffer.from('"user"'),
+  "gjc-transcript": Buffer.from('"user"'),
 };
 
 /**
@@ -425,7 +479,10 @@ function opensTurn(source: RecognizedConversation["source"], line: string): bool
   try { entry = JSON.parse(line); } catch { return false; }
   if (entry === null || typeof entry !== "object") return false;
   if (source === "codex-transcript") return entry.type === "event_msg" && entry.payload?.type === "task_started";
-  if (source !== "claude-transcript") return entry.type === "message" && entry.message?.role === "user";
+  if (source !== "claude-transcript") {
+    const message = piMessage(entry);
+    return message?.role === "user" && (message.content as Record<string, unknown>[]).some((part) => part.type === "text" && typeof part.text === "string" && part.text.length > 0);
+  }
   if (entry.type !== "user" || entry.isMeta || entry.isCompactSummary) return false;
   const content = entry.message?.content;
   if (typeof content === "string") return !isCommandEntry(content);
@@ -453,7 +510,7 @@ function turnStarts(bytes: Buffer, source: RecognizedConversation["source"]): nu
  * every append, so it never does: with no turn start in its window it starts
  * mid-turn, at a whole line.
  */
-function pageBefore(stream: TranscriptStream, source: RecognizedConversation["source"], to: number, { floor = 0, widen }: { floor?: number; widen: boolean }): { start: number; bytes: Buffer } {
+function pageBefore(stream: TranscriptStream, source: RecognizedConversation["source"], to: number, { floor = stream.floor, widen }: { floor?: number; widen: boolean }): { start: number; bytes: Buffer } {
   let from = Math.max(floor, to - TRANSCRIPT_WINDOW_BYTES);
   let bytes = readStream(stream, from, to);
   for (;;) {
@@ -514,7 +571,7 @@ function remember<T>(map: Map<string, T>, key: string, value: T, limit: number):
 
 /** The newest page's start and every turn start in it (pageBefore without widening), or null when it starts mid-turn. */
 function newestPage(path: string, stream: TranscriptStream, source: RecognizedConversation["source"]): { start: number; starts: number[] } | null {
-  const from = Math.max(0, stream.length - TRANSCRIPT_WINDOW_BYTES);
+  const from = Math.max(stream.floor, stream.length - TRANSCRIPT_WINDOW_BYTES);
   let scan = liveScans.get(path);
   // a window that slid past the scanned bytes starts over at its edge (a line may be cut
   // there, as in pageBefore, and never counts as a start)
@@ -536,13 +593,57 @@ function newestPage(path: string, stream: TranscriptStream, source: RecognizedCo
   if (stale !== 0) scan.starts.splice(0, stale === -1 ? scan.starts.length : stale);
   remember(liveScans, path, scan, 32);
   const starts = pending.length > 0 ? [...scan.starts, ...pending] : scan.starts;
-  const start = starts.length > MAX_PAGE_PROMPTS ? starts[starts.length - MAX_PAGE_PROMPTS] : from === 0 ? 0 : starts[0];
+  const start = starts.length > MAX_PAGE_PROMPTS ? starts[starts.length - MAX_PAGE_PROMPTS] : from === stream.floor ? stream.floor : starts[0];
   return start === undefined ? null : { start, starts };
 }
 
 function parseTurns(source: RecognizedConversation["source"], text: string): ConversationTurn[] {
   return source === "codex-transcript" ? parseCodexTranscript(text, Infinity)
     : source === "claude-transcript" ? parseClaudeTranscript(text, Infinity) : parseOmpTranscript(text, Infinity);
+}
+
+interface LiveCodexTurn {
+  id: string;
+  start: number;
+  scanned: number;
+  boundary: string;
+  parser: ReturnType<typeof createCodexTranscriptParser>;
+  metadata: ConversationMetadata;
+}
+const codexTurns = new Map<string, LiveCodexTurn>();
+
+/** Incremental within a long Codex task, including results for tools from earlier polls. */
+function codexLiveTurn(path: string, stream: TranscriptStream, start: number, before: ConversationMetadata): { turns: ConversationTurn[]; metadata: ConversationMetadata } {
+  let cached = codexTurns.get(path);
+  if (!cached || cached.id !== stream.id || cached.start !== start || cached.scanned > stream.length
+    || bytesBefore(stream, cached.scanned) !== cached.boundary) {
+    cached = { id: stream.id, start, scanned: start, boundary: bytesBefore(stream, start), parser: createCodexTranscriptParser(), metadata: before };
+  }
+  const bytes = readStream(stream, cached.scanned, stream.length);
+  const complete = bytes.lastIndexOf(0x0a) + 1;
+  if (complete > 0) {
+    const text = bytes.subarray(0, complete).toString("utf8");
+    cached.parser.write(text);
+    cached.metadata = parseConversationMetadata(text, "codex-transcript", cached.metadata);
+    cached.scanned += complete;
+    cached.boundary = bytesBefore(stream, cached.scanned);
+  }
+  const tail = bytes.subarray(complete).toString("utf8");
+  // Both record count and retained source bytes are bounded, independent of session length.
+  remember(codexTurns, path, cached, 8);
+  let retained = [...codexTurns.values()].reduce((sum, turn) => sum + turn.scanned - turn.start, 0);
+  for (const [key, turn] of codexTurns) {
+    if (retained <= 2 * TRANSCRIPT_WINDOW_BYTES) break;
+    codexTurns.delete(key);
+    retained -= turn.scanned - turn.start;
+  }
+  return { turns: cached.parser.snapshot(tail), metadata: parseConversationMetadata(tail, "codex-transcript", cached.metadata) };
+}
+
+/** Codex settings belong to the live rollout; native clears bound other stores. */
+function metadataHead(path: string, stream: TranscriptStream, source: RecognizedConversation["source"], start: number): string {
+  return source === "codex-transcript" ? readRange(path, 0, METADATA_HEAD_BYTES)
+    : readStream(stream, stream.floor, Math.min(start, stream.floor + METADATA_HEAD_BYTES)).toString("utf8");
 }
 
 /**
@@ -555,7 +656,7 @@ function liveTurns(path: string, stream: TranscriptStream, source: RecognizedCon
   const key = `${path}\0${start}`;
   let settled = settledTurns.get(key);
   if (!settled || settled.id !== stream.id || settled.end > last || bytesBefore(stream, settled.end) !== settled.tail) {
-    const head = start > 0 ? readRange(path, 0, METADATA_HEAD_BYTES) : "";
+    const head = start > stream.floor ? metadataHead(path, stream, source, start) : "";
     settled = { id: stream.id, start, end: start, turns: [], metadata: parseConversationMetadata(`${head}\n`, source), tail: bytesBefore(stream, start) };
   }
   if (settled.end < last) {
@@ -563,6 +664,10 @@ function liveTurns(path: string, stream: TranscriptStream, source: RecognizedCon
     settled = { ...settled, end: last, turns: [...settled.turns, ...parseTurns(source, text)], metadata: parseConversationMetadata(text, source, settled.metadata), tail: bytesBefore(stream, last) };
   }
   remember(settledTurns, key, settled, 8);
+  if (source === "codex-transcript") {
+    const live = codexLiveTurn(path, stream, last, settled.metadata);
+    return { turns: [...settled.turns, ...live.turns], metadata: live.metadata };
+  }
   const text = readStream(stream, last, stream.length).toString("utf8");
   return { turns: [...settled.turns, ...parseTurns(source, text)], metadata: parseConversationMetadata(text, source, settled.metadata) };
 }
@@ -572,24 +677,22 @@ export function forgetTranscriptState(): void {
   cache.clear();
   liveScans.clear();
   settledTurns.clear();
+  codexTurns.clear();
+  transcriptRevisions.clear();
+  clearScans.clear();
 }
 
 function formatCursor(stream: TranscriptStream, offset: number): string | null {
-  return offset > 0 ? `${stream.id}:${offset}` : null;
+  return offset > stream.floor ? `${stream.id}:${offset}` : null;
 }
 
 function parseCursor(stream: TranscriptStream, cursor: string): number {
   const separator = cursor.lastIndexOf(":");
   const offset = Number(cursor.slice(separator + 1));
-  if (separator <= 0 || cursor.slice(0, separator) !== stream.id || !Number.isSafeInteger(offset) || offset < 0 || offset > stream.length) {
+  if (separator <= 0 || cursor.slice(0, separator) !== stream.id || !Number.isSafeInteger(offset) || offset < stream.floor || offset > stream.length) {
     throw new HistoryChanged();
   }
   return offset;
-}
-
-/** omo's per-cwd session dir: `/home/u/p` -> `--home-u-p--` (verified against every dir on disk). */
-function omoSlug(cwd: string): string {
-  return `-${cwd.replaceAll("/", "-")}--`;
 }
 
 /**
@@ -614,38 +717,6 @@ function transcriptCwd(path: string): string | null {
   } finally {
     closeSync(fd);
   }
-}
-
-/**
- * The live omo transcript for a pane's cwd. omo is invisible to herdr's session
- * discovery — the `pi` manifest only detects status and agent.get carries no
- * agent_session — and, unlike omp, omo does not keep the file open while it
- * runs, so chatmux's /proc/<pid>/fd oracle has nothing to read here (measured
- * 2026-09-21). What is left is the store's own layout: the newest transcript
- * under the cwd slug whose session header names that same cwd. Two omo panes
- * sharing one cwd therefore read the same, newer, transcript.
- */
-export function omoTranscriptPath(cwd: string, home = process.env["HOME"] ?? ""): string {
-  const dir = join(home, ".omo", "agent", "sessions", omoSlug(cwd));
-  let entries: string[];
-  try {
-    entries = readdirSync(dir);
-  } catch {
-    throw new ConversationUnavailable("no_session_path");
-  }
-
-  const candidates: { path: string; mtimeMs: number }[] = [];
-  for (const entry of entries) {
-    if (!entry.endsWith(".jsonl")) continue;
-    const path = join(dir, entry);
-    const stat = statSync(path, { throwIfNoEntry: false });
-    if (stat !== undefined) candidates.push({ path, mtimeMs: stat.mtimeMs });
-  }
-  candidates.sort((left, right) => right.mtimeMs - left.mtimeMs);
-
-  const live = candidates.find((candidate) => transcriptCwd(candidate.path) === cwd);
-  if (live === undefined) throw new ConversationUnavailable("no_session_path");
-  return live.path;
 }
 
 /** A gjc session directory's cwd, by directory: one directory holds one cwd's sessions, for good. */
@@ -713,13 +784,6 @@ export async function gjcTranscriptPath(paneId: string, cwd: string, home = proc
   return newest;
 }
 
-/** argv words only an omo process carries: its launcher, its entry, or anything under its install root. */
-const OMO_PROCESS = /(^|\/)omo(\.js)?$|\/omo-ai\//;
-
-export function isOmoProcess(argv: readonly string[]): boolean {
-  return argv.some((word) => OMO_PROCESS.test(word));
-}
-
 /**
  * Is omo the agent in this pane, whatever herdr currently labels it? A probe
  * failure answers "no": the caller then reports why the labelled store failed,
@@ -779,11 +843,16 @@ async function ompTranscriptPath(paneId: string): Promise<string> {
  * The store a pane's transcript lives in. herdr's agent label follows the
  * pane's foreground processes, so an omo pane reads as `pi` while it waits and
  * as `claude` while its claude-sdk child runs (live-verified 2026-09-21) — the
- * label alone cannot route omo. Whenever the labelled store yields nothing, the
- * process tree decides: omo's own store is read only when omo is really running
+ * label alone cannot route omo. Its process tree takes precedence over the child
+ * label: omo's own store is read only when omo is really running
  * in that pane, never on a matching cwd alone.
  */
 async function resolveTranscript(paneId: string, agent: string, cwd: string, codexHome?: string, panes?: HerdrPane[]): Promise<{ source: RecognizedConversation["source"]; path: string }> {
+  if ((agent === "omo" || agent === "pi" || agent === "claude") && await paneRunsOmo(paneId)) {
+    const path = await omoTranscriptForPane(paneId, cwd, panes ?? (await sessionSnapshot()).panes);
+    if (!path) throw new ConversationUnavailable("no_session_path");
+    return { source: "omo-transcript", path };
+  }
   try {
     if (agent === "codex") {
       const path = await codexTranscriptPath(paneId, cwd, codexHome, panes);
@@ -796,7 +865,9 @@ async function resolveTranscript(paneId: string, agent: string, cwd: string, cod
     throw new ConversationUnavailable("no_recognized_transcript");
   } catch (error) {
     if (!(error instanceof ConversationUnavailable) || !(await paneRunsOmo(paneId))) throw error;
-    return { source: "omo-transcript", path: omoTranscriptPath(cwd) };
+    const path = await omoTranscriptForPane(paneId, cwd, panes ?? (await sessionSnapshot()).panes);
+    if (!path) throw new ConversationUnavailable("no_session_path");
+    return { source: "omo-transcript", path };
   }
 }
 
@@ -805,7 +876,7 @@ async function resolveTranscript(paneId: string, agent: string, cwd: string, cod
  * Claude sessions are looked up by id under ~/.claude/projects; omp sessions
  * come as an absolute path from herdr, accepted only under the user's own
  * ~/.omp/agent/sessions dir; omo sessions are resolved from its own store by
- * cwd (omoTranscriptPath). Throws ConversationUnavailable when the pane has
+ * process/session evidence (omoTranscriptForPane). Throws ConversationUnavailable when the pane has
  * no recognized agent store (the caller falls back to the scrollback
  * transcript view, like chatmux).
  *
@@ -825,7 +896,7 @@ export async function paneConversation(paneId: string, codexHome?: string, page:
 
 /** One page of a resolved transcript (paneConversation's `page`). */
 export function transcriptPage(source: RecognizedConversation["source"], path: string, page: ConversationPage = {}, codexHome?: string): RecognizedConversation {
-  let stat: { dev: number; ino: number; size: number; mtimeMs: number };
+  let stat: { dev: number; ino: number; size: number; mtimeMs: number; ctimeMs: number };
   try {
     stat = statSync(path);
   } catch {
@@ -834,17 +905,18 @@ export function transcriptPage(source: RecognizedConversation["source"], path: s
   let stream: TranscriptStream;
   try {
     stream = transcriptStream(source, path, stat, codexHome ?? defaultCodexHome());
+    applyHistoryBoundary(path, stream, source);
   } catch {
     throw new ConversationUnavailable("transcript_missing");
   }
   // an older page never changes while its file and the rollouts before it stay the same
   // (the stream's id names both); the newest one changes with every append
   const key = page.before !== undefined ? `${path}\0before:${page.before}:${page.since ?? ""}` : `${path}\0from:${page.from ?? ""}`;
-  const signature = page.before !== undefined ? stream.id : `${stream.id}:${stat.size}:${stat.mtimeMs}`;
+  const signature = page.before !== undefined ? stream.id : `${stream.id}:${stat.size}:${stat.mtimeMs}:${stat.ctimeMs}`;
   const cached = cache.get(key);
   // the answer is a function of the page asked for and the file's state, so they name it
   const version = answerVersion(key, signature);
-  if (cached?.signature === signature) return { source, turns: cached.turns, metadata: cached.metadata, cursor: cached.cursor, version };
+  if (cached?.signature === signature) return { source, turns: cached.turns, metadata: cached.metadata, cursor: cached.cursor, history_id: stream.id, version };
 
   let start: number;
   let text: string;
@@ -854,7 +926,7 @@ export function transcriptPage(source: RecognizedConversation["source"], path: s
   try {
     if (page.before !== undefined) {
       const before = parseCursor(stream, page.before);
-      const floor = page.since === undefined ? 0 : parseCursor(stream, page.since);
+      const floor = page.since === undefined ? stream.floor : parseCursor(stream, page.since);
       if (floor > before) throw new HistoryChanged();
       const older = before === floor ? { start: floor, bytes: Buffer.alloc(0) } : pageBefore(stream, source, before, { floor, widen: true });
       start = older.start;
@@ -877,7 +949,7 @@ export function transcriptPage(source: RecognizedConversation["source"], path: s
         text = whole.bytes.subarray(start - whole.start).toString("utf8");
       }
     }
-    if (live === null && page.before === undefined && start > 0) head = readRange(path, 0, METADATA_HEAD_BYTES);
+    if (live === null && page.before === undefined && start > stream.floor) head = metadataHead(path, stream, source, start);
     cursor = formatCursor(stream, start);
   } catch (error) {
     if (error instanceof HistoryChanged) throw error;
@@ -894,23 +966,24 @@ export function transcriptPage(source: RecognizedConversation["source"], path: s
   cache.delete(key);
   cache.set(key, { signature, turns, metadata, cursor });
   if (cache.size > 32) cache.delete(cache.keys().next().value!);
-  return { source, turns, metadata, cursor, version };
+  return { source, turns, metadata, cursor, history_id: stream.id, version };
 }
 
 /**
  * One image a user pasted into a Claude prompt, by the ref its image part carries
  * (`<entry uuid>:<block index>`): the transcript holds it as base64, so it is decoded
  * here rather than sent with every poll of the conversation. Null when there is no such
- * image. Only Claude transcripts hold images by entry id.
+ * image. Codex uses a hash of the native attachment and searches only the bound history.
  */
 export async function conversationImage(paneId: string, ref: string, codexHome?: string): Promise<{ mediaType: string; bytes: Uint8Array<ArrayBuffer> } | null> {
-  if (!IMAGE_REF.test(ref)) return null;
+  if (!IMAGE_REF.test(ref) && !CODEX_IMAGE_REF.test(ref)) return null;
   const snapshot = await sessionSnapshot();
   const pane = snapshot.panes.find((candidate) => candidate.pane_id === paneId);
   if (pane === undefined || typeof pane.cwd !== "string" || pane.cwd.length === 0) return null;
   let resolved: { source: RecognizedConversation["source"]; path: string };
   try { resolved = await resolveTranscript(paneId, pane.agent ?? pane.agent_session?.agent ?? "", pane.cwd, codexHome, snapshot.panes); }
   catch (error) { if (error instanceof ConversationUnavailable) return null; throw error; }
+  if (resolved.source === "codex-transcript") return codexTranscriptImage(codexHistorySegments(resolved.path, codexHome), ref, pane.cwd);
   return resolved.source === "claude-transcript" ? transcriptImage(resolved.path, ref) : null;
 }
 
@@ -923,7 +996,8 @@ export function transcriptImage(path: string, ref: string): { mediaType: string;
   const [, uuid, index] = match;
   let text: string;
   try { text = readFileSync(path, "utf8"); } catch { return null; }
-  const needle = `"uuid":"${uuid}"`;
+  text = activeHistoryText(text, "claude-transcript");
+  const needle = JSON.stringify(uuid);
   for (const line of text.split("\n")) {
     if (!line.includes(needle)) continue;
     let entry: TranscriptEntry;
@@ -959,7 +1033,8 @@ export function transcriptToolOutput(source: RecognizedConversation["source"], p
   if (!TOOL_REF.test(ref)) return null;
   let text: string;
   try { text = readFileSync(path, "utf8"); } catch { return null; }
-  const needle = source === "claude-transcript" ? `"tool_use_id":"${ref}"` : source === "codex-transcript" ? `"call_id":"${ref}"` : `"toolCallId":"${ref}"`;
+  text = activeHistoryText(text, source);
+  const needle = JSON.stringify(ref);
   for (const line of text.split("\n")) {
     if (!line.includes(needle)) continue;
     let entry: Record<string, unknown>;
@@ -973,10 +1048,23 @@ export function transcriptToolOutput(source: RecognizedConversation["source"], p
       const payload = entry.payload as { type?: unknown; call_id?: unknown; output?: unknown } | undefined;
       if ((payload?.type === "function_call_output" || payload?.type === "custom_tool_call_output") && payload.call_id === ref) output = codexOutputText(payload.output);
     } else {
-      const message = entry.message as { role?: unknown; toolCallId?: unknown; content?: unknown } | undefined;
-      if (message?.role === "toolResult" && message.toolCallId === ref) output = ompResultText(message.content);
+      const message = piMessage(entry);
+      if (message) output = piResults(message).find((result) => result.id === ref)?.text ?? null;
     }
     if (output !== null) return output.length > TOOL_OUTPUT_MAX ? `${output.slice(0, TOOL_OUTPUT_MAX)}\n… trimmed` : output;
   }
   return null;
+}
+
+/** Asset reads share the reset boundary even when their ref predates /clear. */
+function activeHistoryText(text: string, source: RecognizedConversation["source"]): string {
+  if (source === "codex-transcript") return text;
+  let start = 0, offset = 0;
+  for (const line of text.split("\n")) {
+    if (line.includes("context_clear") || line.includes("/clear")) {
+      try { if (isContextClear(JSON.parse(line), source)) start = offset + line.length + 1; } catch { /* torn line */ }
+    }
+    offset += line.length + 1;
+  }
+  return text.slice(start);
 }

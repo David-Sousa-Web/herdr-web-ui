@@ -29,6 +29,9 @@ describe("decideAccess", () => {
     expect(via({ forwarded: true, tailscaleLogin: "them@example.com", owner: "me@example.com" })).toBe("refused:other_user");
     // a LAN client can type any header: from off this machine it means nothing
     expect(via({ loopback: false, tailscaleLogin: "me@example.com", owner: "me@example.com", gated: true })).toBe("refused:pairing_required");
+    // no login from tailscale serve is a tagged node, not a person: it pairs like any other device
+    expect(via({ forwarded: true, owner: "me@example.com" })).toBe("refused:pairing_required");
+    expect(via({ forwarded: true, owner: "me@example.com", device })).toBe("device");
     // no owner known yet: the header decides nothing either way
     expect(via({ forwarded: true, tailscaleLogin: "me@example.com", owner: null })).toBe("open");
   });

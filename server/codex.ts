@@ -1,11 +1,14 @@
 /** Native Codex rollouts contain both display events and model context. Only
  * conversation records belong in chat; developer prompts and terminal chrome do not. */
 import { Database } from "bun:sqlite";
-import { closeSync, openSync, readdirSync, readFileSync, readlinkSync, readSync, realpathSync, statSync } from "node:fs";
+import { closeSync, openSync, readdirSync, readlinkSync, readSync, realpathSync, statSync } from "node:fs";
 import { homedir } from "node:os";
 import { isAbsolute, join, relative, sep } from "node:path";
 import type { ConversationPart, ConversationTurn, HerdrPane } from "../shared/protocol.ts";
 import { patchFiles, patchText } from "../shared/patch.ts";
+import { processStartedAt } from "./process-start.ts";
+import { codexImageParts } from "./codex-images.ts";
+import { codexReadCall, codexReadSkills, selectedSkill } from "./skill-activity.ts";
 import { trimOutput } from "./tool-output.ts";
 import { herdrRpc, paneRead, sessionSnapshot } from "./herdr/client.ts";
 
@@ -80,101 +83,164 @@ export function codexCallFailed(output: string): boolean {
   return code !== null && code[1] !== "0";
 }
 
-export function parseCodexTranscript(text: string, maxTurns = 100): ConversationTurn[] {
-  const turns: ConversationTurn[] = [];
-  const tools = new Map<string, Extract<ConversationPart, { kind: "tool" }>>();
-  // The same message can occur in both event_msg and response_item. Pair those
-  // copies only; repeated user messages in the same stream are real turns.
-  const messages: { role: string; text: string; source: string; ts: string; paired: boolean; part: Extract<ConversationPart, { kind: "text" }> }[] = [];
-  let startedAt: string | undefined;
+interface CodexParseState {
+  turns: ConversationTurn[];
+  tools: Map<string, Extract<ConversationPart, { kind: "tool" }>>;
+  messages: { role: string; text: string; source: string; ts: string; paired: boolean; part: Extract<ConversationPart, { kind: "text" }>; turn: ConversationTurn }[];
+  startedAt?: string;
+  skillEvents?: Set<string>;
+  activeTurnId?: string;
+}
+
+/** Complete records are folded once; snapshots detach mutable tools from prior HTTP answers. */
+export function createCodexTranscriptParser(state: CodexParseState = { turns: [], tools: new Map(), messages: [] }) {
+  const { turns, tools, messages } = state;
   const assistant = (ts: string): ConversationTurn => {
     let turn = turns.at(-1);
     if (turn?.role !== "assistant") {
-      turn = { role: "assistant", ts: startedAt || ts || null, parts: [] };
+      turn = { role: "assistant", ts: state.startedAt || ts || null, parts: [] };
       turns.push(turn);
     }
     if (ts) turn.end_ts = ts;
     return turn;
   };
-  const message = (role: "user" | "assistant", text: string, source: string, ts: string, phase?: "commentary" | "final_answer"): void => {
+  const message = (role: "user" | "assistant", text: string, source: string, ts: string, phase?: "commentary" | "final_answer", images: ConversationPart[] = []): void => {
     const body = role === "user" ? questionReply(text) ?? text : text;
-    if (!body.trim()) return;
+    if (!body.trim() && images.length === 0) return;
     const duplicate = messages.slice(-8).reverse().find((other) => !other.paired && other.role === role && other.text === body
       && other.source !== source && (other.ts === ts || Math.abs(Date.parse(other.ts) - Date.parse(ts)) <= 1000));
     if (duplicate) {
       duplicate.paired = true;
       if (phase) duplicate.part.phase = phase;
+      // Prefer the event's local paths over a response's inline copies of the same images.
+      if (images.length > 0 && (source === "event" || !duplicate.turn.parts.some((part) => part.kind === "image"))) {
+        duplicate.turn.parts = [...images, ...duplicate.turn.parts.filter((part) => part.kind !== "image")];
+      }
       return;
     }
     const part: Extract<ConversationPart, { kind: "text" }> = { kind: "text", text: body, ...(phase ? { phase } : {}) };
-    if (role === "user") turns.push({ role, ts: ts || null, parts: [part] });
-    else assistant(ts).parts.push(part);
-    messages.push({ role, text: body, source, ts, paired: false, part });
+    const turn = role === "user" ? { role, ts: ts || null, parts: [...images, ...(body.trim() ? [part] : [])] } : assistant(ts);
+    if (role === "user") turns.push(turn);
+    else turn.parts.push(part);
+    messages.push({ role, text: body, source, ts, paired: false, part, turn });
+    if (messages.length > 8) messages.shift();
   };
 
-  for (const entry of entries(text)) {
-    const payload = record(entry.payload);
-    const ts = string(entry.timestamp);
-    if (entry.type === "event_msg") {
-      if (payload.type === "task_started") startedAt = string(payload.started_at) || ts;
-      if (payload.type === "task_complete" || payload.type === "turn_aborted") {
-        const turn = turns.at(-1);
-        if (turn?.role === "assistant" && ts) turn.end_ts = ts;
-        startedAt = undefined;
-      }
-      if (payload.type === "user_message" && (!payload.kind || payload.kind === "plain")) {
-        message("user", contentText(payload.message, true), "event", ts);
-      }
-      if (payload.type === "agent_message") {
-        message("assistant", contentText(payload.message), "event", ts,
-          payload.phase === "commentary" || payload.phase === "final_answer" ? payload.phase : undefined);
-      }
-      continue;
-    }
-    if (entry.type !== "response_item") continue;
-    if (payload.type === "message") {
-      if (payload.role === "user") message("user", contentText(payload.content, true), "response", ts);
-      else if (payload.role === "assistant") {
-        const body = contentText(payload.content);
-        if (payload.channel === "analysis") {
-          if (body.trim()) assistant(ts).parts.push({ kind: "thinking", text: body });
-        } else if (!payload.recipient || payload.recipient === "all") {
-          message("assistant", body, "response", ts,
+  const write = (text: string): void => {
+    for (const entry of entries(text)) {
+      const payload = record(entry.payload);
+      const ts = string(entry.timestamp);
+      if (entry.type === "event_msg") {
+        if (payload.type === "item_completed" && (!state.activeTurnId || !payload.turn_id || payload.turn_id === state.activeTurnId)) {
+          const item = record(payload.item);
+          const id = string(item.id);
+          const skills = codexReadSkills(item);
+          if (id && skills.length > 0 && !state.skillEvents?.has(id)) {
+            (state.skillEvents ??= new Set()).add(id);
+            if (state.skillEvents.size > 512) state.skillEvents.delete(state.skillEvents.values().next().value!);
+            for (const skill of skills) {
+              const turn = assistant(ts);
+              const existing = [...turn.parts].reverse().find((part) => part.kind === "tool" && part.skill?.path === skill.path);
+              if (existing?.kind === "tool" && existing.skill) existing.skill.status = skill.status;
+              else turn.parts.push({ kind: "skill", skill });
+            }
+          }
+        }
+        if (payload.type === "task_started") {
+          state.startedAt = string(payload.started_at) || ts;
+          state.activeTurnId = string(payload.turn_id) || undefined;
+        }
+        if (payload.type === "task_complete" || payload.type === "turn_aborted") {
+          const turn = turns.at(-1);
+          if (turn?.role === "assistant" && ts) turn.end_ts = ts;
+          state.startedAt = undefined;
+        }
+        if (payload.type === "user_message" && (!payload.kind || payload.kind === "plain")) {
+          message("user", contentText(payload.message, true), "event", ts, undefined, codexImageParts(entry));
+        }
+        if (payload.type === "agent_message") {
+          message("assistant", contentText(payload.message), "event", ts,
             payload.phase === "commentary" || payload.phase === "final_answer" ? payload.phase : undefined);
         }
+        continue;
       }
-    } else if (payload.type === "reasoning") {
-      const body = contentText(payload.summary);
-      if (body.trim()) assistant(ts).parts.push({ kind: "thinking", text: body });
-    } else if (payload.type === "function_call" || payload.type === "custom_tool_call") {
-      const name = string(payload.name) || "tool";
-      const raw = payload.type === "function_call" ? payload.arguments : payload.input;
-      let args = record(raw);
-      if (typeof raw === "string") { try { args = record(JSON.parse(raw)); } catch { /* Freeform tool input. */ } }
-      // a patch, bare or in an exec script, is summed up by the files it touches
-      const patch = typeof raw === "string" ? patchText(raw) : null;
-      const summary = patch !== null && patchFiles(patch).length > 0 ? patchFiles(patch).join(", ")
-        : /^request_user_input/.test(name) && questionTitles(args).length > 0
-        ? questionTitles(args).join(" · ")
-        : [args.cmd, args.command, args.file_path, args.path, args.pattern, args.description, args.url].find((v) => typeof v === "string");
-      const part: Extract<ConversationPart, { kind: "tool" }> = {
-        kind: "tool", name, summary: (string(summary) || name).slice(0, 120),
-        input: Object.keys(args).length ? JSON.stringify(args, null, 2) : string(raw), output: "",
-      };
-      assistant(ts).parts.push(part);
-      if (typeof payload.call_id === "string") tools.set(payload.call_id, part);
-    } else if (payload.type === "function_call_output" || payload.type === "custom_tool_call_output") {
-      const tool = tools.get(string(payload.call_id));
-      if (!tool) continue;
-      const output = contentText(payload.output);
-      trimOutput(tool, output, string(payload.call_id));
-      if (codexCallFailed(output)) tool.error = true;
-      tools.delete(string(payload.call_id));
-      const turn = turns.at(-1);
-      if (turn?.role === "assistant" && ts) turn.end_ts = ts;
+      if (entry.type !== "response_item") continue;
+      if (payload.type === "message") {
+        if (payload.role === "user") {
+          const content = Array.isArray(payload.content) ? payload.content : [{ type: "input_text", text: payload.content }];
+          const skills = content.flatMap((block) => {
+            const skill = selectedSkill(string(record(block).text));
+            return skill ? [skill] : [];
+          });
+          const visible = content.filter((block) => !selectedSkill(string(record(block).text)));
+          message("user", contentText(visible, true), "response", ts, undefined, codexImageParts(entry));
+          for (const skill of skills) {
+            const turn = assistant(ts);
+            if (!turn.parts.some((part) => part.kind === "skill" && part.skill.name === skill.name && part.skill.path === skill.path)) turn.parts.push({ kind: "skill", skill });
+          }
+        } else if (payload.role === "assistant") {
+          const body = contentText(payload.content);
+          if (payload.channel === "analysis") {
+            if (body.trim()) assistant(ts).parts.push({ kind: "thinking", text: body });
+          } else if (!payload.recipient || payload.recipient === "all") {
+            message("assistant", body, "response", ts,
+              payload.phase === "commentary" || payload.phase === "final_answer" ? payload.phase : undefined);
+          }
+        }
+      } else if (payload.type === "reasoning") {
+        const body = contentText(payload.summary);
+        if (body.trim()) assistant(ts).parts.push({ kind: "thinking", text: body });
+      } else if (payload.type === "function_call" || payload.type === "custom_tool_call") {
+        const name = string(payload.name) || "tool";
+        const raw = payload.type === "function_call" ? payload.arguments : payload.input;
+        let args = record(raw);
+        if (typeof raw === "string") { try { args = record(JSON.parse(raw)); } catch { /* Freeform tool input. */ } }
+        // a patch, bare or in an exec script, is summed up by the files it touches
+        const patch = typeof raw === "string" ? patchText(raw) : null;
+        const summary = patch !== null && patchFiles(patch).length > 0 ? patchFiles(patch).join(", ")
+          : /^request_user_input/.test(name) && questionTitles(args).length > 0
+          ? questionTitles(args).join(" · ")
+          : [args.cmd, args.command, args.file_path, args.path, args.pattern, args.description, args.url].find((v) => typeof v === "string");
+        const part: Extract<ConversationPart, { kind: "tool" }> = {
+          kind: "tool", name, summary: (string(summary) || name).slice(0, 120),
+          input: Object.keys(args).length ? JSON.stringify(args, null, 2) : string(raw), output: "",
+        };
+        const skill = codexReadCall(name, args);
+        if (skill) part.skill = skill;
+        assistant(ts).parts.push(part);
+        if (typeof payload.call_id === "string") tools.set(payload.call_id, part);
+      } else if (payload.type === "function_call_output" || payload.type === "custom_tool_call_output") {
+        const tool = tools.get(string(payload.call_id));
+        if (!tool) continue;
+        const output = contentText(payload.output);
+        trimOutput(tool, output, string(payload.call_id));
+        if (codexCallFailed(output)) tool.error = true;
+        if (tool.skill) tool.skill.status = tool.error ? "failed" : "loaded";
+        tools.delete(string(payload.call_id));
+        const turn = turns.at(-1);
+        if (turn?.role === "assistant" && ts) turn.end_ts = ts;
+      }
     }
-  }
-  return turns.filter((turn) => turn.parts.length > 0).slice(-maxTurns);
+  };
+  return {
+    write,
+    snapshot(tail = ""): ConversationTurn[] {
+      // A valid final line without a newline is visible now, but is not committed:
+      // the writer can still extend it before the next poll.
+      if (tail.trim()) {
+        const preview = createCodexTranscriptParser(structuredClone(state));
+        preview.write(tail);
+        return preview.snapshot();
+      }
+      return structuredClone(turns.filter((turn) => turn.parts.length > 0));
+    },
+  };
+}
+
+export function parseCodexTranscript(text: string, maxTurns = 100): ConversationTurn[] {
+  const parser = createCodexTranscriptParser();
+  parser.write(text);
+  return parser.snapshot().slice(-maxTurns);
 }
 
 export const defaultCodexHome = (): string => process.env["CODEX_HOME"] || join(homedir(), ".codex");
@@ -501,20 +567,6 @@ export function resumedThread(argvs: readonly (readonly string[])[]): string | n
 
 /** The rollout each pane's Codex was last matched to on screen, the processes that were running it, and when. */
 const boundRollouts = new Map<string, { processes: string; path: string; at: number }>();
-
-/**
- * When a process started, in ms since the epoch: Linux counts it in /proc (USER_HZ
- * ticks after boot). null where that is not readable, as on macOS.
- */
-function processStartedAt(pid: number): number | null {
-  try {
-    const ticks = Number(readFileSync(`/proc/${pid}/stat`, "utf8").split(") ").pop()!.split(" ")[19]);
-    const boot = Number(readFileSync("/proc/stat", "utf8").match(/^btime (\d+)$/m)?.[1]);
-    return Number.isFinite(ticks) && Number.isFinite(boot) ? boot * 1000 + ticks * 10 : null;
-  } catch {
-    return null;
-  }
-}
 
 /**
  * Threads begun in this cwd since `since` (seconds) that this pane's Codex may have moved

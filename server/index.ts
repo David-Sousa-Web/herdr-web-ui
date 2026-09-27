@@ -857,8 +857,8 @@ export function createServer(
         try {
           const image = await conversationImage(paneId, ref, options.codexHome);
           if (image === null) return jsonResponse({ error: { code: "image_not_found", message: "no such image in this pane's conversation" } }, 404);
-          // an entry's image never changes: the browser keeps it
-          return new Response(image.bytes, { headers: { "content-type": image.mediaType, "cache-control": "private, max-age=86400, immutable", "x-content-type-options": "nosniff" } });
+          // Claude embeds immutable bytes; a Codex attachment may name a local file that changes.
+          return new Response(image.bytes, { headers: { "content-type": image.mediaType, "cache-control": ref.startsWith("codex-") ? "private, no-store" : "private, max-age=86400, immutable", "x-content-type-options": "nosniff" } });
         } catch (error) {
           return errorResponse(error);
         }

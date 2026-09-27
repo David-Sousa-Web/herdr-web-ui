@@ -172,17 +172,27 @@ export interface ConversationTurn {
   parts: ConversationPart[];
 }
 
+/** Evidence of skill activity, not a claim that the skill's workflow completed. */
+export interface SkillActivity {
+  name: string;
+  evidence: "invocation" | "instructions";
+  status: "requested" | "loaded" | "failed";
+  path?: string;
+}
+
 export type ConversationPart =
   | { kind: "text"; text: string; phase?: "commentary" | "final_answer" }
   /** the agent's reasoning block; the client folds it and shows it only on request */
   | { kind: "thinking"; text: string }
+  | { kind: "skill"; skill: SkillActivity }
   /** `error`: the call failed (the agent recorded it so, or its output says a command exited non-zero) */
   | {
     kind: "tool"; name: string; summary: string; input: string; output: string; error?: boolean;
+    skill?: SkillActivity;
     /** set when `output` was cut: the call's id, for GET /api/pane/conversation/tool-output, and the whole output's length */
     output_ref?: string; output_size?: number;
   }
-  /** an image the user sent, fetched on demand: GET /api/pane/conversation/image?pane_id=…&ref=… */
+  /** A native Claude/Codex user image, addressed by an opaque ref and fetched on demand: GET /api/pane/conversation/image?pane_id=…&ref=… */
   | { kind: "image"; media_type: string; ref: string }
   /** the summary a compaction left; the conversation before it is what it sums up */
   | { kind: "compact"; text: string };
@@ -201,6 +211,8 @@ export interface ConversationMetadata {
 
 /** GET /api/pane/conversation: native conversation with settings, or scrollback fallback. */
 export interface ConversationResponse {
+  /** Stable across appends; changes on transcript replacement or native context clear. */
+  history_id?: string;
   source: "claude-transcript" | "omp-transcript" | "omo-transcript" | "gjc-transcript" | "codex-transcript" | "scrollback";
   turns: ConversationTurn[];
   metadata?: ConversationMetadata;

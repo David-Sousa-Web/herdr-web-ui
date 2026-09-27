@@ -7,6 +7,64 @@ between releases do not reach them. Remote-PC runtime bundles are versioned sepa
 
 ## [Unreleased]
 
+### Changed
+- The installer keeps herdr's plugin install preview (every command of the manifest) to itself and
+  prints only herdr's `Installed ...` line; when the install fails, it prints all of herdr's output.
+- README: a sample of the installer's output, from a PC that had herdr but no Bun or Node.
+
+## [0.3.24] - 2026-09-27
+
+### Changed
+- The installer's addresses are links a terminal can open with a click (OSC 8), plain text when
+  the output goes to a file or log. It also names this PC's Tailscale IP next to the phone address,
+  which stays the MagicDNS name: the HTTPS certificate is for the name, not the IP.
+
+## [0.3.23] - 2026-09-27
+
+### Fixed
+- The one-line installer, run where the app is already installed, prints the phone address and its
+  QR code from the version that runs. herdr's plugin directory keeps the version first installed
+  (in-app updates run from `~/.config/herdr-web-ui/updates`), so it used to find no `phone` step
+  there and only said to update. A running version from before 0.3.22 gets the address it already
+  knows, as a QR code.
+
+## [0.3.22] - 2026-09-27
+
+### Added
+- A one-line installer: `curl -fsSL https://devswha.github.io/herdr-web-ui/install.sh | sh`
+  installs what is missing (herdr, Bun, Node 22, for the user only and without sudo), installs the
+  herdr plugin and starts it when herdr runs. When Tailscale runs on the PC, it serves the app to
+  the tailnet on the first free HTTPS port, says how to undo that, and prints the address a phone
+  opens as a QR code. Running it again keeps what is there and prints the address again.
+- `bun scripts/plugin.ts phone`, the installer's last step, for a plugin installed without it.
+
+### Changed
+- Through a proxy on a PC whose Tailscale login is known, as with `tailscale serve`, a request
+  with no login (a tagged device) needs pairing, even before the first device is paired.
+- The plugin starts the server with `~/.bun/bin`, `~/.local/bin` and the installer's Node appended
+  to herdr's PATH, so a herdr started from a shell without them still runs terminals.
+
+## [0.3.21] - 2026-09-27
+
+### Added
+- Codex and Claude skill activity stays visible above folded chat work blocks: the skill name,
+  invocation/read status, and expandable evidence or document path. Recorded activity is distinct
+  from completing the skill's workflow; English and Korean labels work on desktop and mobile.
+- Native Codex image attachments, including image-only prompts, appear in the chat through
+  bounded, pane-scoped image reads.
+
+### Fixed
+- Native context clears discard old turns, pending calls, loaded pages and stale cursors.
+  Late page and tool-output responses cannot restore cleared history or populate another pane.
+- omp, omo and gjc transcripts honor hidden messages and normalize string messages, tool field
+  aliases and embedded results consistently across rendering, paging and full-output reads.
+- omo transcript selection uses process/session evidence and rejects ambiguous same-directory
+  candidates. Claude paste wrappers unwrap only when their identifiers match.
+
+### Changed
+- Growing Codex tasks parse incrementally while preserving transcript rewrite invalidation,
+  reducing repeated parsing of long tool-heavy turns.
+
 ## [0.3.20] - 2026-09-27
 
 ### Added
@@ -464,7 +522,11 @@ First public version.
 - Installable PWA, a mobile key bar, web push alerts and optional token auth.
 - Distribution as a herdr plugin.
 
-[Unreleased]: https://github.com/devswha/herdr-web-ui/compare/v0.3.20...HEAD
+[Unreleased]: https://github.com/devswha/herdr-web-ui/compare/v0.3.24...HEAD
+[0.3.24]: https://github.com/devswha/herdr-web-ui/compare/v0.3.23...v0.3.24
+[0.3.23]: https://github.com/devswha/herdr-web-ui/compare/v0.3.22...v0.3.23
+[0.3.22]: https://github.com/devswha/herdr-web-ui/compare/v0.3.21...v0.3.22
+[0.3.21]: https://github.com/devswha/herdr-web-ui/compare/v0.3.20...v0.3.21
 [0.3.20]: https://github.com/devswha/herdr-web-ui/compare/v0.3.19...v0.3.20
 [0.3.19]: https://github.com/devswha/herdr-web-ui/compare/v0.3.18...v0.3.19
 [0.3.18]: https://github.com/devswha/herdr-web-ui/compare/v0.3.17...v0.3.18

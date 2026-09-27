@@ -23,6 +23,8 @@ const out = join(root, "_site");
 
 const copies: Array<[from: string, to: string]> = [
   ["site/index.html", "index.html"],
+  // the one-line installer: curl -fsSL https://devswha.github.io/herdr-web-ui/install.sh | sh
+  ["install.sh", "install.sh"],
   ["public/favicon.ico", "favicon.ico"],
   ["public/favicon.png", "favicon.png"],
   ["public/apple-touch-icon.png", "apple-touch-icon.png"],

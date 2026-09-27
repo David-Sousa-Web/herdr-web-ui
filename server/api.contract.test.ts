@@ -1102,14 +1102,20 @@ describe("pairing and identity", () => {
       expect(paired.status).toBe(204);
       const list = (await (await fetch(`${base()}/api/devices`)).json()) as { devices: Array<{ label: string }> };
       expect(list.devices.map((d) => d.label)).toContain("Phone by CLI");
-      // with a token configured, the script reads it from the plugin's env file and gets past the gate
+      // with a token configured, the script reads it from the plugin's .env file and gets past the gate
       const tokenState = mkdtempSync(join(tmpdir(), "herdr-pair-cli-token-"));
       const secured = createServer({ port: 0, stateDir: tokenState, token: "cli-t0k3n", tailscaleOwner: null });
       try {
-        writeFileSync(join(configDir, "env"), "HERDR_WEB_TOKEN=cli-t0k3n\n");
+        writeFileSync(join(configDir, ".env"), "HERDR_WEB_TOKEN=cli-t0k3n\n");
         const withToken = await pairCli(secured.port);
         expect(withToken.exitCode, withToken.err).toBe(0);
         expect(withToken.out).toMatch(/Pairing code: \d{3} \d{3}/);
+        // the older `env` file is still read, and wins over `.env`
+        writeFileSync(join(configDir, ".env"), "HERDR_WEB_TOKEN=stale\n");
+        writeFileSync(join(configDir, "env"), "HERDR_WEB_TOKEN=cli-t0k3n\n");
+        const withLegacy = await pairCli(secured.port);
+        expect(withLegacy.exitCode, withLegacy.err).toBe(0);
+        expect(withLegacy.out).toMatch(/Pairing code: \d{3} \d{3}/);
       } finally { secured.stop(); rmSync(tokenState, { recursive: true, force: true }); }
     } finally { rmSync(configDir, { recursive: true, force: true }); }
   });

@@ -37,6 +37,8 @@ const READY_TIMEOUT_MS = 20_000;
 const SERVE_TIMEOUT_MS = 180_000;
 /** how to come back to `phone` once Tailscale is set up: an action's output goes to herdr's log, not a terminal */
 const PHONE_AGAIN = "curl -fsSL https://devswha.github.io/herdr-web-ui/install.sh | sh";
+/** herdr's plugin docs suggest `.env`; `env` is what this plugin read first, so it stays and wins */
+const ENV_FILES = [".env", "env"];
 
 /**
  * Run by hand (`pair` on a headless PC), herdr's env is not there to name the config dir:
@@ -48,7 +50,7 @@ function herdrConfigDir(): string | null {
   try {
     const result = Bun.spawnSync([herdr, "plugin", "config-dir", "devswha.herdr-web-ui"], { stdout: "pipe", stderr: "ignore", timeout: 3000 });
     const dir = result.exitCode === 0 ? result.stdout.toString().trim() : "";
-    return dir !== "" && existsSync(join(dir, "env")) ? dir : null;
+    return dir !== "" && ENV_FILES.some((name) => existsSync(join(dir, name))) ? dir : null;
   } catch {
     return null;
   }
@@ -56,15 +58,17 @@ function herdrConfigDir(): string | null {
 
 /** `KEY=value` lines from the plugin's config dir: the token lives here, not in herdr's env. */
 function userEnv(): Record<string, string> {
-  const file = join(CONFIG_DIR, "env");
-  if (!existsSync(file)) return {};
   const vars: Record<string, string> = {};
-  for (const line of readFileSync(file, "utf8").split("\n")) {
-    const trimmed = line.trim();
-    if (trimmed.length === 0 || trimmed.startsWith("#")) continue;
-    const eq = trimmed.indexOf("=");
-    if (eq <= 0) continue;
-    vars[trimmed.slice(0, eq).trim()] = trimmed.slice(eq + 1).trim().replace(/^["']|["']$/g, "");
+  for (const name of ENV_FILES) {
+    const file = join(CONFIG_DIR, name);
+    if (!existsSync(file)) continue;
+    for (const line of readFileSync(file, "utf8").split("\n")) {
+      const trimmed = line.trim();
+      if (trimmed.length === 0 || trimmed.startsWith("#")) continue;
+      const eq = trimmed.indexOf("=");
+      if (eq <= 0) continue;
+      vars[trimmed.slice(0, eq).trim()] = trimmed.slice(eq + 1).trim().replace(/^["']|["']$/g, "");
+    }
   }
   return vars;
 }
@@ -152,7 +156,7 @@ async function start(): Promise<number> {
     if (await health()) {
       process.stdout.write(`herdr web ui listening at ${origin}\n`);
       if ((env["HERDR_WEB_TOKEN"] ?? "") === "") {
-        process.stdout.write(`no token set: your own Tailscale devices get in as you; pair any other device in Settings → Devices, or put HERDR_WEB_TOKEN=<token> in ${join(CONFIG_DIR, "env")}\n`);
+        process.stdout.write(`no token set: your own Tailscale devices get in as you; pair any other device in Settings → Devices, or put HERDR_WEB_TOKEN=<token> in ${join(CONFIG_DIR, ".env")}\n`);
       }
       return 0;
     }

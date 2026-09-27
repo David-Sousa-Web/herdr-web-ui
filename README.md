@@ -92,7 +92,7 @@ It does, in order, only what is not done yet:
 - **The app**, as a herdr plugin: herdr builds it and starts it along with itself, on `127.0.0.1:7317`, following the socket of the current herdr session. When herdr is already running, the app starts now.
 - **The phone address.** When Tailscale runs on this PC, it serves the app to your tailnet (`tailscale serve`, see [On your phone](#on-your-phone)), tells you the command that undoes it, and prints the address as a QR code. Without Tailscale, it says what to set up.
 
-Run it again at any time, for example after setting up Tailscale: it keeps what is there and prints the address again.
+Run it again at any time, for example after setting up Tailscale: it keeps what is there and prints the address and QR code again.
 
 <details>
 <summary>Other ways to install</summary>
@@ -122,12 +122,13 @@ bun run start
 
 ### In a terminal
 
-Two commands print to your terminal, not to herdr's log. `P` is the plugin's directory (`P=.` in a checkout):
+**The phone address, again:** run the one-line installer again. On a PC where the app is installed it installs nothing and prints the address and its QR code, serving the app to your tailnet first if nothing does yet. It finds the version that actually runs: herdr's plugin directory keeps the version first installed, and **Settings → Updates** runs newer ones from `~/.config/herdr-web-ui/updates`. From a checkout, `bun scripts/plugin.ts phone` does the same.
+
+**A pairing code, on a PC with no browser of its own:**
 
 ```bash
-P="$(ls -d ~/.config/herdr/plugins/github/devswha.herdr-web-ui-* | head -1)"
-bun "$P/scripts/plugin.ts" phone   # the phone address as a QR code; serves the app to your tailnet if nothing does yet
-bun "$P/scripts/plugin.ts" pair    # a pairing code for another device, for a PC with no browser of its own
+bun "$(ls -d ~/.config/herdr/plugins/github/devswha.herdr-web-ui-* | head -1)/scripts/plugin.ts" pair   # plugin install
+bun scripts/plugin.ts pair                                                                             # from a checkout
 ```
 
 `pair` prints the code, the address the phone opens when Tailscale serves one, and that address as a QR code. Neither is a herdr action: herdr keeps an action's output in its log, and a pairing code belongs on the screen. The actions start, stop and report on the server:

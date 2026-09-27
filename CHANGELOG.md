@@ -7,6 +7,13 @@ between releases do not reach them. Remote-PC runtime bundles are versioned sepa
 
 ## [Unreleased]
 
+### Fixed
+- The one-line installer, run where the app is already installed, prints the phone address and its
+  QR code from the version that runs. herdr's plugin directory keeps the version first installed
+  (in-app updates run from `~/.config/herdr-web-ui/updates`), so it used to find no `phone` step
+  there and only said to update. A running version from before 0.3.22 gets the address it already
+  knows, as a QR code.
+
 ## [0.3.22] - 2026-09-27
 
 ### Added

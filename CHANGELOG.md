@@ -7,12 +7,26 @@ between releases do not reach them. Remote-PC runtime bundles are versioned sepa
 
 ## [Unreleased]
 
+## [0.3.25] - 2026-09-27
+
+### Added
+- Chat Markdown renders inline `\(...\)` and display `\[...\]` equations with KaTeX.
+  Code stays literal, and invalid or incomplete formulas preserve the surrounding Markdown.
+
 ### Changed
 - The installer keeps herdr's plugin install preview (every command of the manifest) to itself and
   prints only herdr's `Installed ...` line; when the install fails, it prints all of herdr's output.
 - README: a sample of the installer's output, from a PC that had herdr but no Bun or Node.
 
 ### Fixed
+- Ctrl+V in the terminal pastes clipboard text instead of sending a control character that
+  triggers an agent's image-paste shortcut and reports "No image in clipboard". Korean text,
+  multiline paste, Ctrl+Shift+V and other terminal control keys retain their expected behavior.
+- Revoking a paired device closes its active terminal connections and roster stream immediately.
+  A corrupt or unreadable device registry stays gated and intact, with recovery guidance.
+- Token and paired-device sessions show **Sign out** in the header and command palette.
+  Closed or obsolete pane selections recover to a live pane without discarding newly created
+  panes or selections on disconnected PCs.
 - The plugin also reads its settings from `.env` in herdr's plugin config dir, the name herdr's
   plugin docs use; it read only `env`, so a `.env` (say, `HOST=0.0.0.0` for a reverse proxy) was
   silently ignored. `env` is still read; where both set a key to different values, `.env` wins and
@@ -529,7 +543,8 @@ First public version.
 - Installable PWA, a mobile key bar, web push alerts and optional token auth.
 - Distribution as a herdr plugin.
 
-[Unreleased]: https://github.com/devswha/herdr-web-ui/compare/v0.3.24...HEAD
+[Unreleased]: https://github.com/devswha/herdr-web-ui/compare/v0.3.25...HEAD
+[0.3.25]: https://github.com/devswha/herdr-web-ui/compare/v0.3.24...v0.3.25
 [0.3.24]: https://github.com/devswha/herdr-web-ui/compare/v0.3.23...v0.3.24
 [0.3.23]: https://github.com/devswha/herdr-web-ui/compare/v0.3.22...v0.3.23
 [0.3.22]: https://github.com/devswha/herdr-web-ui/compare/v0.3.21...v0.3.22

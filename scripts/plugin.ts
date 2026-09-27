@@ -13,7 +13,7 @@
  * - herdr injects HERDR_SOCKET_PATH; the server reads HERDR_SOCKET. Without the
  *   mapping a named session's plugin would talk to the default socket.
  * - plugin commands inherit herdr's environment, not the user's shell, so the
- *   token and any overrides are read from `env` in HERDR_PLUGIN_CONFIG_DIR.
+ *   token and any overrides are read from `env` and `.env` in HERDR_PLUGIN_CONFIG_DIR.
  */
 
 import { spawn } from "node:child_process";
@@ -26,6 +26,12 @@ import qrcode from "qrcode-generator";
 import { DEFAULT_PORT } from "../shared/protocol.ts";
 import { parseTailscale, parseTailscaleIp, parseTailscaleOwner, readTailscale, tailscaleBinary } from "../server/tailscale.ts";
 
+/**
+ * Read in this order, so `.env` wins: `env` is what this plugin read first, `.env` is what herdr's
+ * plugin docs suggest, and a user who edits `.env` from those docs must not be overridden by an old `env`.
+ * Declared before CONFIG_DIR, whose lookup uses it.
+ */
+const ENV_FILES = ["env", ".env"];
 const ROOT = process.env["HERDR_PLUGIN_ROOT"] ?? import.meta.dir.replace(/\/scripts$/, "");
 const STATE_DIR = process.env["HERDR_PLUGIN_STATE_DIR"] ?? join(homedir(), ".local", "state", "herdr-web-ui");
 const CONFIG_DIR = process.env["HERDR_PLUGIN_CONFIG_DIR"] ?? herdrConfigDir() ?? join(homedir(), ".config", "herdr-web-ui");
@@ -48,16 +54,14 @@ function herdrConfigDir(): string | null {
   try {
     const result = Bun.spawnSync([herdr, "plugin", "config-dir", "devswha.herdr-web-ui"], { stdout: "pipe", stderr: "ignore", timeout: 3000 });
     const dir = result.exitCode === 0 ? result.stdout.toString().trim() : "";
-    return dir !== "" && existsSync(join(dir, "env")) ? dir : null;
+    return dir !== "" && ENV_FILES.some((name) => existsSync(join(dir, name))) ? dir : null;
   } catch {
     return null;
   }
 }
 
-/** `KEY=value` lines from the plugin's config dir: the token lives here, not in herdr's env. */
-function userEnv(): Record<string, string> {
-  const file = join(CONFIG_DIR, "env");
-  if (!existsSync(file)) return {};
+/** `KEY=value` lines of one settings file */
+function readEnvFile(file: string): Record<string, string> {
   const vars: Record<string, string> = {};
   for (const line of readFileSync(file, "utf8").split("\n")) {
     const trimmed = line.trim();
@@ -69,7 +73,12 @@ function userEnv(): Record<string, string> {
   return vars;
 }
 
-const env = { ...process.env, ...userEnv() };
+/** the settings files in the plugin's config dir: the token lives here, not in herdr's env */
+const CONFIG_FILES = ENV_FILES.map((name) => join(CONFIG_DIR, name)).filter((file) => existsSync(file));
+const fileVars = CONFIG_FILES.map(readEnvFile);
+/** keys both files set to different values: `.env` wins, which someone editing `env` would not expect */
+const shadowed = fileVars.length === 2 ? Object.keys(fileVars[0]!).filter((key) => key in fileVars[1]! && fileVars[0]![key] !== fileVars[1]![key]) : [];
+const env = { ...process.env, ...Object.assign({}, ...fileVars) as Record<string, string> };
 const port = Number(env["PORT"] ?? DEFAULT_PORT);
 const host = env["HOST"] ?? "127.0.0.1";
 const origin = `http://${host === "0.0.0.0" ? "127.0.0.1" : host}:${port}`;
@@ -119,7 +128,14 @@ function recordedPid(): number | null {
   }
 }
 
+/** names the keys only, never their values: a token must not reach herdr's log */
+function warnShadowed(): void {
+  if (shadowed.length === 0) return;
+  process.stdout.write(`both env and .env in ${CONFIG_DIR} set ${shadowed.join(", ")}; .env wins. Merge them into one file.\n`);
+}
+
 async function start(): Promise<number> {
+  warnShadowed();
   if (await health()) {
     process.stdout.write(`herdr web ui already running at ${origin}\n`);
     return 0;
@@ -284,6 +300,8 @@ async function status(): Promise<number> {
   const pid = recordedPid();
   const up = await health();
   process.stdout.write(`${up ? "running" : "down"} ${origin}${pid === null ? "" : ` (pid ${pid})`}\n`);
+  process.stdout.write(`config: ${CONFIG_FILES.length === 0 ? `none (settings go in ${join(CONFIG_DIR, "env")})` : CONFIG_FILES.join(", ")}\n`);
+  warnShadowed();
   return 0;
 }
 

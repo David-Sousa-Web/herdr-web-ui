@@ -24,7 +24,7 @@ import { join } from "node:path";
 import qrcode from "qrcode-generator";
 
 import { DEFAULT_PORT } from "../shared/protocol.ts";
-import { parseTailscale, parseTailscaleOwner, readTailscale, tailscaleBinary } from "../server/tailscale.ts";
+import { parseTailscale, parseTailscaleIp, parseTailscaleOwner, readTailscale, tailscaleBinary } from "../server/tailscale.ts";
 
 const ROOT = process.env["HERDR_PLUGIN_ROOT"] ?? import.meta.dir.replace(/\/scripts$/, "");
 const STATE_DIR = process.env["HERDR_PLUGIN_STATE_DIR"] ?? join(homedir(), ".local", "state", "herdr-web-ui");
@@ -84,6 +84,11 @@ function toolPath(): string {
   const home = homedir();
   const extra = [join(home, ".bun", "bin"), join(home, ".local", "bin"), join(home, ".local", "share", "herdr-web-ui", "node", "bin")];
   return [...current, ...extra.filter((dir) => existsSync(dir) && !current.includes(dir))].join(":");
+}
+
+/** A clickable address where a terminal shows it (OSC 8), plain where the output goes to a log or a file. */
+function link(url: string): string {
+  return process.stdout.isTTY ? `\x1b]8;;${url}\x1b\\${url}\x1b]8;;\x1b\\` : url;
 }
 
 function qr(text: string): string {
@@ -199,7 +204,7 @@ async function pair(): Promise<number> {
   } catch { /* an older server: the code alone */ }
   const out: string[] = [`Pairing code: ${code.slice(0, 3)} ${code.slice(3)}   (good for 10 minutes, for one device)`];
   if (url !== null) {
-    out.push(`On the other device, open ${url} and enter the code, or scan this to open it with the code filled in:`, "");
+    out.push(`On the other device, open ${link(url)} and enter the code, or scan this to open it with the code filled in:`, "");
     out.push(qr(`${url}/?pair=${code}`));
   } else {
     out.push("On the other device, open the app's address and enter the code. Settings → Phone, on any signed-in device, shows the address and how to get one.");
@@ -217,9 +222,9 @@ async function pair(): Promise<number> {
 async function phone(): Promise<number> {
   const say = (line = "") => process.stdout.write(line + "\n");
   const running = await health();
-  say(`herdr web ui on this PC: ${origin}${running ? "" : " (not running yet: it starts with herdr)"}`);
+  say(`herdr web ui on this PC: ${link(origin)}${running ? "" : " (not running yet: it starts with herdr)"}`);
   if (!["127.0.0.1", "0.0.0.0", "localhost"].includes(host)) {
-    say(`HOST is ${host}, so Tailscale, which serves 127.0.0.1, is left alone. On the phone, open http://${host}:${port}.`);
+    say(`HOST is ${host}, so Tailscale, which serves 127.0.0.1, is left alone. On the phone, open ${link(`http://${host}:${port}`)}.`);
     return 0;
   }
   const binary = tailscaleBinary();
@@ -263,8 +268,11 @@ async function phone(): Promise<number> {
   const httpsPort = new URL(url).port || "443";
   if (published) say(`Tailscale now serves ${url} → http://127.0.0.1:${port}, for your tailnet only. To undo: tailscale serve --https=${httpsPort} off`);
   const owner = parseTailscaleOwner(output?.status ?? null);
+  const ip = parseTailscaleIp(output?.status ?? null);
   say("");
-  say(`On your phone: ${url}`);
+  say(`On your phone: ${link(url)}`);
+  // the name, not the IP, is what the HTTPS certificate is for: https://100.x.y.z would warn
+  if (ip !== null) say(`Tailscale IP of this PC: ${ip}. Open the name above, not the IP: the HTTPS certificate is for the name.`);
   say(`Scan this with a phone signed in to Tailscale${owner === null ? "" : ` as ${owner}`}; that login gets in without a code.`);
   say("Anyone else on your tailnet needs a pairing code: Settings → Devices, or the pair command.");
   say(qr(url));

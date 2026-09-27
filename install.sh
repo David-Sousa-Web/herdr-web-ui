@@ -23,6 +23,9 @@ NODE_DIR="$HOME/.local/share/herdr-web-ui/node"
 NODE_VERSION="v22.23.2"
 
 say() { printf '%s\n' "herdr web ui: $*"; }
+# a clickable address in a terminal (OSC 8); $terminal is set once, since $(link …) runs in a pipe
+# shellcheck disable=SC1003 # the backslashes end OSC 8 escapes (ESC \\), no quote is escaped
+link() { if [ "$terminal" = 1 ]; then printf '\033]8;;%s\033\\%s\033]8;;\033\\' "$1" "$1"; else printf '%s' "$1"; fi; }
 fail() { printf '%s\n' "herdr web ui: $*" >&2; exit 1; }
 need() { command -v "$1" >/dev/null 2>&1 || fail "needs '$1', which is not installed. Install it and run this again."; }
 # at_least 1.4.0 1.10.2: is the second dotted version the first or newer
@@ -88,6 +91,8 @@ main() {
     *) fail "runs on x64 and arm64; this is $(uname -m)" ;;
   esac
   platform="$os-$arch"
+  terminal=0
+  [ ! -t 1 ] || terminal=1
   if [ "$os" = linux ] && ldd --version 2>&1 | grep -qi musl; then
     fail "the terminal addon has no build for musl (Alpine); use a glibc distribution"
   fi
@@ -163,9 +168,9 @@ main() {
     origin=$(bun "$root/scripts/plugin.ts" status </dev/null | awk '$1 == "running" { print $2 }')
     url=""
     [ -z "$origin" ] || url=$(curl -fsS --max-time 5 "$origin/api/access" 2>/dev/null | bun -e 'try { console.log(JSON.parse(await Bun.stdin.text()).tailscale?.serving_url ?? "") } catch { console.log("") }')
-    [ -z "$origin" ] || say "on this PC: $origin"
+    [ -z "$origin" ] || say "on this PC: $(link "$origin")"
     if [ -n "$url" ]; then
-      say "on your phone: $url"
+      say "on your phone: $(link "$url")"
       # the app's own QR library, there since 0.3.11 for Settings → Phone
       if [ -d "$code/node_modules/qrcode-generator" ]; then
         # shellcheck disable=SC2016 # JavaScript, not shell

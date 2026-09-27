@@ -1,6 +1,7 @@
 export type InlineNode =
   | { type: "text"; value: string }
   | { type: "code"; value: string }
+  | { type: "math"; value: string }
   | { type: "strong" | "em" | "del"; children: InlineNode[] }
   | { type: "link"; href: string; children: InlineNode[] }
   /** a link to a local file (`[report](/repo/out/REPORT.md)`): its label opens the path */
@@ -20,6 +21,7 @@ export interface ListBlock {
 }
 
 export type MarkdownBlock =
+  | { type: "math"; value: string }
   | { type: "heading"; level: 1 | 2 | 3 | 4 | 5 | 6; content: InlineNode[] }
   | { type: "paragraph"; lines: InlineNode[][] }
   | ListBlock
@@ -86,7 +88,7 @@ export function parseInline(source: string, links = true): InlineNode[] {
   // rendering exactly as it appears in the terminal and native transcript.
   // a bare or <angle> http(s) URL is a link too; it stops at the first non-ASCII character,
   // so `…/pull/36에서` links the address and leaves the Korean after it as text
-  const marker = /(`[^`\n]+`|\[[^\]\n]+\]\([^\s)]+\)|<https?:\/\/[^\s<>]+>|https?:\/\/[!-;=?-~]+|(?<![\w.@/-])www\.[!-;=?-~]+|\*\*[^*\n]+\*\*|(?<![\p{L}\p{N}\p{M}_])__(?=\S)[^\n]*?\S__(?![\p{L}\p{N}\p{M}_])|~~[^~\n]+~~|(?<!\*)\*[^*\n]+\*(?!\*)|(?<![\p{L}\p{N}\p{M}_])_(?=\S)[^\n]*?\S_(?![\p{L}\p{N}\p{M}_]))/gu;
+  const marker = /(`[^`\n]+`|\\\(.+?\\\)|\[[^\]\n]+\]\([^\s)]+\)|<https?:\/\/[^\s<>]+>|https?:\/\/[!-;=?-~]+|(?<![\w.@/-])www\.[!-;=?-~]+|\*\*[^*\n]+\*\*|(?<![\p{L}\p{N}\p{M}_])__(?=\S)[^\n]*?\S__(?![\p{L}\p{N}\p{M}_])|~~[^~\n]+~~|(?<!\*)\*[^*\n]+\*(?!\*)|(?<![\p{L}\p{N}\p{M}_])_(?=\S)[^\n]*?\S_(?![\p{L}\p{N}\p{M}_]))/gu;
   let offset = 0;
   for (const match of source.matchAll(marker)) {
     const index = match.index ?? 0;
@@ -102,6 +104,8 @@ export function parseInline(source: string, links = true): InlineNode[] {
       nodes.push(links ? { type: "link", href, children: [{ type: "text", value: token }] } : { type: "text", value: token });
     } else if (token.startsWith("`")) {
       nodes.push({ type: "code", value: token.slice(1, -1) });
+    } else if (token.startsWith("\\(")) {
+      nodes.push({ type: "math", value: token.slice(2, -2) });
     } else if (token.startsWith("[")) {
       const split = token.lastIndexOf("](");
       const label = token.slice(1, split);
@@ -138,7 +142,7 @@ function lineAt(lines: string[], index: number): string {
 
 function startsBlock(lines: string[], index: number): boolean {
   const line = lines[index] ?? "";
-  return /^\s{0,3}```/.test(line) || /^#{1,6}\s+/.test(line) || /^\s*>/.test(line) || /^(?:\s*[-*_]){3,}\s*$/.test(line) || listLine.test(line)
+  return /^\s*\\\[/.test(line) || /^\s{0,3}```/.test(line) || /^#{1,6}\s+/.test(line) || /^\s*>/.test(line) || /^(?:\s*[-*_]){3,}\s*$/.test(line) || listLine.test(line)
     || (line.includes("|") && tableSeparator.test(lines[index + 1] ?? ""));
 }
 
@@ -217,6 +221,30 @@ export function parseMarkdown(source: string): MarkdownBlock[] {
       if (index < lines.length) index += 1;
       blocks.push({ type: "code", language: fence[2] ?? "", value: body.join("\n") });
       continue;
+    }
+
+    const display = /^\s*\\\[(.*)$/.exec(line);
+    if (display !== null) {
+      const body: string[] = [];
+      let next = index;
+      let part = display[1] ?? "";
+      let complete = false;
+      while (true) {
+        const close = part.indexOf("\\]");
+        if (close !== -1 && part.slice(close + 2).trim() === "") {
+          body.push(part.slice(0, close));
+          blocks.push({ type: "math", value: body.join("\n").trim() });
+          index = next + 1;
+          complete = true;
+          break;
+        }
+        body.push(part);
+        next += 1;
+        if (next >= lines.length || /^\s{0,3}```/.test(lineAt(lines, next))) break;
+        part = lineAt(lines, next);
+      }
+      // An incomplete formula stays prose; later headings and fences still parse normally.
+      if (complete) continue;
     }
 
     const heading = /^(#{1,6})\s+(.+)$/.exec(line);

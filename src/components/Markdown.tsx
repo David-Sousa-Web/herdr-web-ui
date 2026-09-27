@@ -1,9 +1,20 @@
 import { useContext, useLayoutEffect, useMemo, useRef, useState, type ReactNode } from "react";
 import { Check, Copy } from "lucide-react";
+import katex from "katex";
 
 import { foldCode, parseMarkdown, type InlineNode, type ListBlock, type MarkdownBlock } from "../lib/markdown.ts";
 import { codeIsFilePath, OpenFileContext, splitFilePaths } from "../lib/filePaths.ts";
 import { useT } from "../lib/i18n.ts";
+
+function MathExpression({ value, displayMode = false }: { value: string; displayMode?: boolean }) {
+  try {
+    // KaTeX escapes text and rejects untrusted commands by default.
+    const html = katex.renderToString(value, { displayMode, strict: "ignore" });
+    return <span className={displayMode ? "markdown-math-display" : "markdown-math"} dangerouslySetInnerHTML={{ __html: html }} />;
+  } catch {
+    return <span>{displayMode ? `\\[${value}\\]` : `\\(${value}\\)`}</span>;
+  }
+}
 
 /** A file path the viewer opens: a button that reads as the text or code it replaced. */
 function FilePath({ path, code, open }: { path: string; code: boolean; open: (path: string) => void }) {
@@ -28,6 +39,7 @@ function Inline({ nodes, interactive = true }: { nodes: InlineNode[]; interactiv
         if (interactive && /^https?:\/\/\S+$/i.test(node.value)) return <a key={key} className="markdown-code-link" href={node.value} target="_blank" rel="noopener noreferrer"><code>{node.value}</code></a>;
         return open !== null && codeIsFilePath(node.value) ? <FilePath key={key} path={node.value} code open={open} /> : <code key={key}>{node.value}</code>;
       }
+      case "math": return <MathExpression key={key} value={node.value} />;
       case "strong": return <strong key={key}><Inline nodes={node.children} interactive={interactive} /></strong>;
       case "em": return <em key={key}><Inline nodes={node.children} interactive={interactive} /></em>;
       case "del": return <del key={key}><Inline nodes={node.children} interactive={interactive} /></del>;
@@ -114,6 +126,7 @@ function Blocks({ blocks }: { blocks: MarkdownBlock[] }) {
       case "list": return <List key={key} block={block} />;
       case "blockquote": return <blockquote key={key}><Blocks blocks={block.blocks} /></blockquote>;
       case "code": return <CodeBlock key={key} language={block.language} value={block.value} />;
+      case "math": return <MathExpression key={key} value={block.value} displayMode />;
       case "hr": return <hr key={key} />;
       case "table": return (
         <div className="markdown-table-wrap" key={key}>

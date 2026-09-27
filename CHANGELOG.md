@@ -7,6 +7,8 @@ between releases do not reach them. Remote-PC runtime bundles are versioned sepa
 
 ## [Unreleased]
 
+## [0.3.23] - 2026-09-27
+
 ### Fixed
 - The one-line installer, run where the app is already installed, prints the phone address and its
   QR code from the version that runs. herdr's plugin directory keeps the version first installed
@@ -508,7 +510,8 @@ First public version.
 - Installable PWA, a mobile key bar, web push alerts and optional token auth.
 - Distribution as a herdr plugin.
 
-[Unreleased]: https://github.com/devswha/herdr-web-ui/compare/v0.3.22...HEAD
+[Unreleased]: https://github.com/devswha/herdr-web-ui/compare/v0.3.23...HEAD
+[0.3.23]: https://github.com/devswha/herdr-web-ui/compare/v0.3.22...v0.3.23
 [0.3.22]: https://github.com/devswha/herdr-web-ui/compare/v0.3.21...v0.3.22
 [0.3.21]: https://github.com/devswha/herdr-web-ui/compare/v0.3.20...v0.3.21
 [0.3.20]: https://github.com/devswha/herdr-web-ui/compare/v0.3.19...v0.3.20

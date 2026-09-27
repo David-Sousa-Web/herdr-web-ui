@@ -66,6 +66,38 @@ try {
   const composer = page.getByRole("textbox", { name: "Message", exact: true });
   await composer.waitFor();
 
+  // Use a real browser paste: keydown must not send Ctrl+V (0x16) to the agent,
+  // where it can trigger image paste against the server's unrelated clipboard.
+  await context.grantPermissions(["clipboard-read", "clipboard-write"], { origin });
+  await page.getByTitle("Live terminal (⌘⇧J)", { exact: true }).click();
+  const terminalInput = page.locator(".xterm-helper-textarea");
+  for (const [shortcut, text] of [
+    ["Control+v", "# terminal paste 한글"],
+    ["Control+v", "# first line\n# second line"],
+    ["Control+Shift+v", "# plain text paste"],
+  ]) {
+    await page.evaluate((value) => navigator.clipboard.writeText(value), text!);
+    await terminalInput.focus();
+    const beforePaste = inputs.length;
+    await page.keyboard.press(shortcut!);
+    await until(() => inputs.length > beforePaste, `terminal ${shortcut}`);
+    const pasted = inputs.slice(beforePaste);
+    assert.equal(pasted.length, 1, "paste must send the text exactly once");
+    assert.equal(pasted[0]!.pane_id, paneA);
+    assert.equal(
+      pasted[0]!.text.replace(/^\x1b\[200~/, "").replace(/\x1b\[201~$/, ""),
+      text!.replace(/\n/g, "\r"),
+      "paste must send clipboard text, never the image-paste control key",
+    );
+    const beforeCancel = inputs.length;
+    await page.keyboard.press("Control+c");
+    await until(() => inputs.length > beforeCancel, "terminal Ctrl+C");
+    assert.equal(inputs.at(-1)?.text, "\x03", "other terminal control keys must still work");
+  }
+  await page.getByTitle("Chat transcript (⌘⇧J)", { exact: true }).click();
+  await composer.waitFor();
+  console.log("PASS terminal clipboard paste sends text once and preserves Ctrl+C");
+
   await page.keyboard.press("Control+Shift+Comma");
   await page.getByRole("dialog", { name: "Settings" }).waitFor();
   await page.getByRole("button", { name: "Light", exact: true }).click();

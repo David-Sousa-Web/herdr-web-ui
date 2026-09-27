@@ -213,6 +213,13 @@ export function PaneTerminal({
     // an address in the terminal opens in a new tab; the page never navigates away from the pane
     term.loadAddon(new WebLinksAddon((_event, uri) => { window.open(uri, "_blank", "noopener,noreferrer"); }));
     term.open(host);
+    // Let the browser emit a paste event, which xterm already handles (including
+    // bracketed paste). Otherwise Ctrl+V becomes 0x16, triggering the agent's
+    // image-paste shortcut against the server's clipboard and canceling text paste.
+    // Returning false skips xterm's key handling without preventing browser defaults.
+    term.attachCustomKeyEventHandler((event) => !(
+      event.ctrlKey && !event.altKey && !event.metaKey && event.key.toLowerCase() === "v"
+    ));
     // herdr reads the wheel as mouse reports. Were reporting ever off, xterm would turn
     // a wheel into arrow keys, which walk an agent's prompt history instead of scrolling.
     term.attachCustomWheelEventHandler(() => term.modes.mouseTrackingMode !== "none");

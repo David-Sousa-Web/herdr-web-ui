@@ -5,7 +5,9 @@
  * receives), or for what it holds (a paired device's cookie, or the shared token). A token,
  * when one is configured, gates everything, this PC included: the remote-PC bridge runs on
  * a loopback port of a PC other people may use. Without a token, and until the first device is
- * paired, anything that reaches the server is let in as it always was.
+ * paired, anything that reaches the server is let in as it always was, except through a proxy
+ * on a PC whose Tailscale login is known: there, a request with no login header is a tagged
+ * node (tailscale serve states no person for it), and a tailnet can hold many of those.
  */
 import type { AccessRefusal, AccessVia, DeviceRole } from "../shared/protocol.ts";
 import type { DeviceMatch } from "./devices.ts";
@@ -48,6 +50,7 @@ export function decideAccess(input: AccessInput): Access {
   }
   if (input.tokenConfigured) return { level: "none", reason: "token_required" };
   if (input.loopback && !input.forwarded) return { level: "full", via: "local", role: "drive" };
+  if (input.loopback && input.forwarded && input.owner !== null) return { level: "none", reason: "pairing_required" };
   // the public internet is never "open", whatever is paired
   if (!input.gated && !input.funnel) return { level: "full", via: "open", role: "drive" };
   return { level: "none", reason: "pairing_required" };

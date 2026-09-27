@@ -7,6 +7,20 @@ between releases do not reach them. Remote-PC runtime bundles are versioned sepa
 
 ## [Unreleased]
 
+### Added
+- A one-line installer: `curl -fsSL https://devswha.github.io/herdr-web-ui/install.sh | sh`
+  installs what is missing (herdr, Bun, Node 22, for the user only and without sudo), installs the
+  herdr plugin and starts it when herdr runs. When Tailscale runs on the PC, it serves the app to
+  the tailnet on the first free HTTPS port, says how to undo that, and prints the address a phone
+  opens as a QR code. Running it again keeps what is there and prints the address again.
+- `bun scripts/plugin.ts phone`, the installer's last step, for a plugin installed without it.
+
+### Changed
+- Through a proxy on a PC whose Tailscale login is known, as with `tailscale serve`, a request
+  with no login (a tagged device) needs pairing, even before the first device is paired.
+- The plugin starts the server with `~/.bun/bin`, `~/.local/bin` and the installer's Node appended
+  to herdr's PATH, so a herdr started from a shell without them still runs terminals.
+
 ## [0.3.21] - 2026-09-27
 
 ### Added

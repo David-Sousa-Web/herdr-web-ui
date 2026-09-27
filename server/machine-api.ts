@@ -6,7 +6,7 @@ import { isJsonObject, jsonResponse } from "./http.ts";
 const fail = (code: string, message: string, status: number) => jsonResponse({ error: { code, message } }, status);
 export const MACHINE_PROXY_PATH = /^(?:session|agents|pane\/(?:read|conversation|commands|files|prompt|prompt\/answer|input|keys|close|rename|image)|workspace\/(?:create|rename|move|close|directories)|fs\/(?:stat|file))$/;
 
-export async function handleMachineRequest(request: Request, manager: MachineManager): Promise<Response> {
+export async function handleMachineRequest(request: Request, manager: MachineManager, onRevoke?: (close: () => void) => () => void): Promise<Response> {
   const url = new URL(request.url);
   if (!sameOrigin(request)) return fail("invalid_origin", "Use PC controls from this app", 403);
   if (!["GET", "HEAD"].includes(request.method) && request.headers.get("x-herdr-machine") !== "1") return fail("invalid_machine_request", "Use PC controls from this app", 403);
@@ -15,18 +15,28 @@ export async function handleMachineRequest(request: Request, manager: MachineMan
     if (!parts.length && request.method === "GET") return jsonResponse({ machines: manager.list() });
     if (parts[0] === "events" && parts.length === 1 && request.method === "GET") {
       let stop: (() => void) | undefined;
-      let heartbeat: ReturnType<typeof setInterval>;
+      let unwatchDevice: (() => void) | undefined;
+      let heartbeat: ReturnType<typeof setInterval> | undefined;
+      let close = () => {};
+      const cleanup = () => {
+        stop?.(); unwatchDevice?.(); clearInterval(heartbeat);
+        request.signal.removeEventListener("abort", close);
+      };
       const encoder = new TextEncoder();
       const stream = new ReadableStream<Uint8Array>({
         start(controller) {
           let closed = false;
-          const close = () => { if (closed) return; closed = true; stop?.(); clearInterval(heartbeat); try { controller.close(); } catch {} };
+          close = () => { if (closed) return; closed = true; cleanup(); try { controller.close(); } catch {} };
+          unwatchDevice = onRevoke?.(close);
+          if (closed) return;
           const send = (text: string) => { if (closed) return; if ((controller.desiredSize ?? 0) < -4) { close(); return; } try { controller.enqueue(encoder.encode(text)); } catch { close(); } };
           stop = manager.subscribe((event) => send(`data: ${JSON.stringify(event)}\n\n`));
+          if (closed) { cleanup(); return; }
           heartbeat = setInterval(() => send(": heartbeat\n\n"), 15_000);
           request.signal.addEventListener("abort", close, { once: true });
+          if (request.signal.aborted) close();
         },
-        cancel() { stop?.(); clearInterval(heartbeat); },
+        cancel() { close(); },
       });
       return new Response(stream, { headers: { "content-type": "text/event-stream", "cache-control": "no-store", "x-accel-buffering": "no" } });
     }

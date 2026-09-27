@@ -120,6 +120,9 @@ async function paneContext(paneId: string): Promise<{ agent: string | null; cwd:
 }
 
 interface SocketData {
+  deviceId?: string;
+  revoked?: boolean;
+  unwatchDevice?: () => void;
   relay?: MachineRelay;
   attached: Set<string>;
   output: Map<string, OutputWindow>;
@@ -235,8 +238,9 @@ export function createServer(
    * the bytes, so the pane sees the whole gap. So does a Codex "blocked" only by questions
    * waiting collapsed in its queue: its main prompt still takes the message.
    */
-  async function submitText(paneId: string, text: string, payload: string, arrivedAt: number, fromTerminal = false): Promise<void> {
+  async function submitText(paneId: string, text: string, payload: string, arrivedAt: number, fromTerminal = false, authorize: () => void = () => {}): Promise<void> {
     const inTime = (): void => {
+      authorize();
       if (Date.now() - arrivedAt > (options.submitDeadlineMs ?? SUBMIT_DEADLINE_MS)) {
         throw new HerdrError("submit_timeout", "the message waited too long behind earlier input; nothing was typed");
       }
@@ -258,7 +262,12 @@ export function createServer(
     inTime();
     await paneSendText(paneId, payload);
     await Bun.sleep(SUBMIT_DELAY_MS);
+    authorize();
     await paneSendKeys(paneId, ["Enter"]);
+  }
+
+  function authorizeSocket(client: Client): void {
+    if (client.data.revoked) throw new HerdrError("device_revoked", "this device's access was revoked");
   }
 
   /** Is this pane's agent Codex, blocked only by questions waiting collapsed in its queue (codexQuestionsCollapsed)? */
@@ -579,13 +588,15 @@ export function createServer(
           url.pathname = pathname;
         } else {
           bunServer.timeout(request, pathname === "/api/machines/events" ? 0 : 80);
-          const response = await handleMachineRequest(request, machines);
+          const deviceId = access.level === "full" ? access.device?.id : undefined;
+          const response = await handleMachineRequest(request, machines, deviceId ? (close) => devices.onRevoke(deviceId, close) : undefined);
           response.headers.set("cache-control", "no-store");
           return response;
         }
       }
       if (pathname === "/ws") {
         if (!sameOrigin(request)) return new Response("invalid origin", { status: 403 });
+        const deviceId = access.level === "full" ? access.device?.id : undefined;
         const machineId = url.searchParams.get("machine_id");
         if (machineId && machineId !== "local") {
           if (access.level === "none") return unauthorizedJson(access.reason);
@@ -594,13 +605,13 @@ export function createServer(
           try {
             relay = new MachineRelay(machines, machineId);
             await relay.ready;
-            const upgraded = bunServer.upgrade(request, { data: { attached: new Set<string>(), mode: "interact", output: new Map(), closing: false, relay } });
+            const upgraded = bunServer.upgrade(request, { data: { attached: new Set<string>(), mode: "interact", output: new Map(), closing: false, relay, deviceId } });
             if (upgraded) return undefined as unknown as Response;
             relay.close();
           } catch { relay?.close(); return new Response("remote websocket unavailable", { status: 502 }); }
           return new Response("websocket upgrade required", { status: 426 });
         }
-        const upgraded = bunServer.upgrade(request, { data: { attached: new Set<string>(), mode: "interact", output: new Map(), closing: false } });
+        const upgraded = bunServer.upgrade(request, { data: { attached: new Set<string>(), mode: "interact", output: new Map(), closing: false, deviceId } });
         if (upgraded) return undefined as unknown as Response;
         return new Response("websocket upgrade required", { status: 426 });
       }
@@ -978,6 +989,19 @@ export function createServer(
         for (const paneId of client.data.attached) reconcileOutput(paneId);
       },
       async open(client) {
+        if (client.data.deviceId) {
+          client.data.unwatchDevice = devices.onRevoke(client.data.deviceId, () => {
+            client.data.revoked = true;
+            client.data.closing = true;
+            clients.delete(client);
+            for (const paneId of client.data.attached) detach(paneId, client);
+            client.data.attached.clear();
+            client.data.output.clear();
+            client.data.relay?.close(1008, "Device access revoked");
+            client.close(1008, "Device access revoked");
+          });
+          if (client.data.revoked) return;
+        }
         if (client.data.relay) { client.data.relay.bind(client as ServerWebSocket<unknown>); return; }
         clients.add(client);
         try {
@@ -989,8 +1013,8 @@ export function createServer(
       },
 
       async message(client, raw) {
-        if (client.data.relay) { client.data.relay.message(raw); return; }
         if (client.data.closing) return;
+        if (client.data.relay) { client.data.relay.message(raw); return; }
         let message: ClientMessage;
         try {
           message = JSON.parse(String(raw)) as ClientMessage;
@@ -1076,7 +1100,7 @@ export function createServer(
               if (!attachment) break;
               if (paneQueues.has(message.pane_id)) {
                 const text = message.text;
-                void serialize(message.pane_id, () => paneSendText(message.pane_id, text)).catch(() => undefined);
+                void serialize(message.pane_id, () => { authorizeSocket(client); return paneSendText(message.pane_id, text); }).catch(() => undefined);
               } else {
                 attachment.pty.write(message.text);
                 lastTyped.set(message.pane_id, Date.now());
@@ -1104,7 +1128,7 @@ export function createServer(
                 send(client, { type: "error", code: "read_only", message: "this connection is in observe mode" });
                 break;
               }
-              await serialize(message.pane_id, () => paneSendKeys(message.pane_id, message.keys));
+              await serialize(message.pane_id, () => { authorizeSocket(client); return paneSendKeys(message.pane_id, message.keys); });
               break;
             }
             case "submit": {
@@ -1123,7 +1147,7 @@ export function createServer(
               }
               const arrivedAt = Date.now();
               try {
-                await serialize(message.pane_id, () => submitText(message.pane_id, message.text, message.payload, arrivedAt, message.typed === true));
+                await serialize(message.pane_id, () => submitText(message.pane_id, message.text, message.payload, arrivedAt, message.typed === true, () => authorizeSocket(client)));
                 result(true);
               } catch (error) {
                 result(false, error instanceof HerdrError ? error.code : "submit_failed", error instanceof Error ? error.message : String(error));
@@ -1156,6 +1180,7 @@ export function createServer(
       },
 
       close(client) {
+        client.data.unwatchDevice?.();
         if (client.data.relay) { client.data.relay.close(); return; }
         clients.delete(client);
         for (const paneId of client.data.attached) detach(paneId, client);

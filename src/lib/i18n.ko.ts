@@ -81,7 +81,7 @@ export const KO: Record<string, string> = {
   "Browse files": "파일 찾아보기",
   "Command palette (⌘⇧K)": "명령 팔레트 (⌘⇧K)",
   "Settings (⌘⇧,)": "설정 (⌘⇧,)",
-  "Lock": "잠금",
+  "Sign out": "로그아웃",
   "Retry": "다시 시도",
   "Enable notifications": "알림 켜기",
   "Notify me when a pane needs input or finishes": "패널이 입력을 기다리거나 끝나면 알려줍니다",

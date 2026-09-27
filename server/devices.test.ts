@@ -1,5 +1,5 @@
 import { afterAll, describe, expect, it } from "bun:test";
-import { mkdtempSync, readFileSync, rmSync, statSync } from "node:fs";
+import { mkdirSync, mkdtempSync, readFileSync, rmSync, statSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { DeviceStore, normalizeLabel } from "./devices.ts";
@@ -9,6 +9,41 @@ const dir = mkdtempSync(join(tmpdir(), "herdr-devices-"));
 afterAll(() => rmSync(dir, { recursive: true, force: true }));
 
 describe("DeviceStore", () => {
+  it("keeps an unreadable or invalid registry gated and intact for recovery", () => {
+    for (const contents of ["{broken", "null", "{}", '{"devices":[]}', '{"gate_closed_at":null,"devices":[{}]}']) {
+      const root = mkdtempSync(join(dir, "invalid-"));
+      const path = join(root, "devices.json");
+      writeFileSync(path, contents);
+      const store = new DeviceStore(root);
+      expect(store.gated).toBe(true);
+      expect(store.error).toContain("Restore a valid devices.json");
+      expect(() => store.startPairing()).toThrow();
+      expect(() => store.revoke("any")).toThrow();
+      expect(readFileSync(path, "utf8")).toBe(contents);
+    }
+    const unreadable = mkdtempSync(join(dir, "unreadable-"));
+    mkdirSync(join(unreadable, "devices.json"));
+    expect(new DeviceStore(unreadable).gated).toBe(true);
+    const fresh = new DeviceStore(mkdtempSync(join(dir, "fresh-")));
+    expect(fresh.error).toBeNull();
+    expect(fresh.gated).toBe(false);
+  });
+
+  it("closes only the revoked device's listeners, including late registrations", () => {
+    const store = new DeviceStore(mkdtempSync(join(dir, "listeners-")));
+    const a = store.pair(store.startPairing().code, "A", "drive")!;
+    const b = store.pair(store.startPairing().code, "B", "drive")!;
+    const closed: string[] = [];
+    store.onRevoke(a.device.id, () => closed.push("a"));
+    store.onRevoke(b.device.id, () => closed.push("b"));
+    const unsubscribe = store.onRevoke(a.device.id, () => closed.push("finished"));
+    unsubscribe();
+    store.revoke(a.device.id);
+    store.onRevoke(a.device.id, () => closed.push("late upgrade"));
+    expect(closed).toEqual(["a", "late upgrade"]);
+    expect(store.match(b.token)).not.toBeNull();
+  });
+
   it("pairs with the code once, keeps only a hash, and finds the device by its token", () => {
     const store = new DeviceStore(dir);
     expect(store.gated).toBe(false);

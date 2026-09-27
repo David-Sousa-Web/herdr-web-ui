@@ -3,8 +3,8 @@
  * instead of the shared token. The owner starts a pairing on the PC and gets a short code
  * that lives ten minutes; the device sends the code once and receives a token of its own
  * in an HttpOnly cookie. Only a hash of that token is stored, so devices.json in the state
- * dir (0600, written whole) reveals nothing if read. Revoking a device takes effect on its
- * next request. A device is either allowed to drive (type, answer, manage) or only to watch.
+ * dir (0600, written whole) reveals nothing if read. Revocation also closes that device's
+ * active streams. A device is either allowed to drive (type, answer, manage) or only to watch.
  */
 import { createHash, randomBytes, randomInt, timingSafeEqual } from "node:crypto";
 import { mkdirSync, readFileSync, renameSync, writeFileSync } from "node:fs";
@@ -71,17 +71,30 @@ export class DeviceStore {
   private gateClosedAt: string | null = null;
   private pending: { code: string; expires: number; attempts: number } | null = null;
   private readonly path: string;
+  private readonly revocations = new Map<string, Set<() => void>>();
+  readonly error: string | null = null;
 
   constructor(stateDir: string) {
     this.path = join(stateDir, "devices.json");
     try {
-      const parsed = JSON.parse(readFileSync(this.path, "utf8")) as { devices?: unknown; gate_closed_at?: unknown };
-      if (typeof parsed.gate_closed_at === "string") this.gateClosedAt = parsed.gate_closed_at;
-      if (Array.isArray(parsed.devices)) {
-        this.devices = parsed.devices.filter((d): d is StoredDevice =>
-          d !== null && typeof d === "object" && typeof (d as StoredDevice).id === "string" && typeof (d as StoredDevice).token_hash === "string" && isDeviceRole((d as StoredDevice).role));
+      const parsed: unknown = JSON.parse(readFileSync(this.path, "utf8"));
+      if (!isJsonObject(parsed) || !Array.isArray(parsed.devices)
+        || !(parsed.gate_closed_at === null || typeof parsed.gate_closed_at === "string")
+        || !parsed.devices.every((d) => isJsonObject(d) && typeof d.id === "string"
+          && typeof d.token_hash === "string" && isDeviceRole(d.role)
+          && typeof d.label === "string" && typeof d.created_at === "string"
+          && (d.last_seen_at === null || typeof d.last_seen_at === "string"))) {
+        throw new Error("invalid device registry");
       }
-    } catch { /* no devices yet, or unreadable: start empty rather than refuse everyone */ }
+      this.gateClosedAt = parsed.gate_closed_at;
+      this.devices = parsed.devices as StoredDevice[];
+    } catch (error) {
+      if ((error as NodeJS.ErrnoException).code === "ENOENT") return;
+      // A damaged registry is not a first installation. Keep it intact for recovery and
+      // let the existing local/token/Tailscale routes provide access to the owner.
+      this.error = `Cannot read ${this.path}. Restore a valid devices.json or fix its permissions, then restart the server. External access without a token or trusted Tailscale login remains blocked.`;
+      console.error(this.error);
+    }
   }
 
   /**
@@ -89,7 +102,23 @@ export class DeviceStore {
    * every device is revoked (revoking must never reopen the LAN); this PC itself always gets in.
    */
   get gated(): boolean {
-    return this.gateClosedAt !== null || this.devices.length > 0;
+    return this.error !== null || this.gateClosedAt !== null || this.devices.length > 0;
+  }
+
+  /** Called immediately for an already-revoked identity, including an upgrade still in flight. */
+  onRevoke(id: string, close: () => void): () => void {
+    if (!this.devices.some((device) => device.id === id)) { close(); return () => {}; }
+    const listeners = this.revocations.get(id) ?? new Set<() => void>();
+    listeners.add(close);
+    this.revocations.set(id, listeners);
+    return () => {
+      listeners.delete(close);
+      if (listeners.size === 0) this.revocations.delete(id);
+    };
+  }
+
+  private assertWritable(): void {
+    if (this.error !== null) throw new Error(this.error);
   }
 
   list(currentId: string | null): PairedDevice[] {
@@ -98,6 +127,7 @@ export class DeviceStore {
 
   /** A fresh six-digit code, replacing any code still pending. */
   startPairing(now = Date.now()): PairingCode {
+    this.assertWritable();
     const code = String(randomInt(0, 1_000_000)).padStart(6, "0");
     this.pending = { code, expires: now + CODE_TTL_MS, attempts: 0 };
     return { code, expires_at: new Date(this.pending.expires).toISOString() };
@@ -105,6 +135,7 @@ export class DeviceStore {
 
   /** `{ token }` when the code is right; null when it is wrong, spent or expired. */
   pair(code: string, label: string, role: DeviceRole, now = Date.now()): { token: string; device: DeviceMatch } | null {
+    this.assertWritable();
     const pending = this.pending;
     if (pending === null || now > pending.expires) { this.pending = null; return null; }
     if (!same(code.replace(/\D/g, ""), pending.code)) {
@@ -135,6 +166,7 @@ export class DeviceStore {
   }
 
   update(id: string, patch: { label?: string; role?: DeviceRole }): PairedDevice | null {
+    this.assertWritable();
     const device = this.devices.find((d) => d.id === id);
     if (!device) return null;
     if (patch.label !== undefined) device.label = patch.label;
@@ -144,10 +176,14 @@ export class DeviceStore {
   }
 
   revoke(id: string): boolean {
+    this.assertWritable();
     const before = this.devices.length;
     this.devices = this.devices.filter((d) => d.id !== id);
     if (this.devices.length === before) return false;
     this.save();
+    const listeners = this.revocations.get(id);
+    this.revocations.delete(id);
+    for (const close of listeners ?? []) close();
     return true;
   }
 
@@ -162,6 +198,7 @@ export class DeviceStore {
  * needs the app's own mutation guard (same origin + X-Herdr-Machine), like the other mutations.
  */
 export async function handleDeviceRequest(request: Request, pathname: string, store: DeviceStore, access: Access): Promise<Response> {
+  if (store.error !== null) return jsonResponse({ error: { code: "device_store_unavailable", message: access.level === "full" ? store.error : "Device pairing is unavailable; ask the owner to check Settings → Devices on the host." } }, 503);
   const json = async (): Promise<Record<string, unknown> | Response> => {
     try {
       const body = (await request.json()) as unknown;

@@ -315,6 +315,52 @@ try {
   assert.deepEqual(errors, []);
   await touch.close();
   console.log("PASS touch terminal input line sends whole lines, Enter alone, and yields to direct typing");
+
+  // A closed pane and an obsolete saved pane both yield to a live pane. Local access
+  // is automatic, so it must not offer a sign-out action that cannot lock the app.
+  assert.equal(await page.getByRole("button", { name: "Sign out", exact: true }).count(), 0);
+  await page.locator(`.pane-select[title^="${created.pane_id} —"]`).click();
+  await workspaceClose(created.workspace_id);
+  workspaces.splice(workspaces.indexOf(created.workspace_id), 1);
+  await until(async () => {
+    const selected = JSON.parse(await page.evaluate(() => sessionStorage.getItem("herdr-web-ui:selection") ?? "null"));
+    return selected?.pane_id && selected.pane_id !== created.pane_id;
+  }, "closed pane selection recovered");
+  await page.evaluate(() => sessionStorage.setItem("herdr-web-ui:selection", JSON.stringify({ machine_id: "local", pane_id: "obsolete-pane" })));
+  await page.reload();
+  await until(async () => {
+    const selected = JSON.parse(await page.evaluate(() => sessionStorage.getItem("herdr-web-ui:selection") ?? "null"));
+    return selected?.pane_id && selected.pane_id !== "obsolete-pane";
+  }, "obsolete saved selection recovered");
+  console.log("PASS closed and obsolete saved panes recover their selection");
+  await page.close();
+
+  const secured = createServer({ port: 0, hostname: "127.0.0.1", token: "browser-test-token", stateDir: join(root, "secured"), tailscaleOwner: null });
+  releases.push(() => secured.stop());
+  const securedOrigin = `http://127.0.0.1:${secured.port}`;
+  const securedContext = await browser.newContext({ viewport: { width: 1280, height: 800 } });
+  // Use a new pane so this bridge never competes with the first server's attachments.
+  const securedWorkspace = await workspaceCreate({ cwd: root, label: "herdr-web-ui-test-browser-signout" });
+  workspaces.push(securedWorkspace.workspace.workspace_id);
+  const securedPage = await securedContext.newPage();
+  await securedContext.request.post(`${securedOrigin}/api/auth`, { data: { token: "browser-test-token" } });
+  await securedPage.goto(`${securedOrigin}/?pane=${encodeURIComponent(securedWorkspace.root_pane.pane_id)}`);
+  await securedPage.getByRole("button", { name: "Sign out", exact: true }).waitFor();
+  await securedPage.keyboard.press("Control+Shift+K");
+  await securedPage.getByRole("option", { name: "Sign out", exact: true }).waitFor();
+  await securedPage.keyboard.press("Escape");
+  await securedPage.getByRole("button", { name: "Sign out", exact: true }).click();
+  await securedPage.getByTestId("token-gate").waitFor();
+  assert.equal((await securedContext.request.get(`${securedOrigin}/api/session`)).status(), 401);
+  const pairing = await securedContext.request.post(`${securedOrigin}/api/devices/pair/start`, { headers: { authorization: "Bearer browser-test-token", "x-herdr-machine": "1" } });
+  const { code } = await pairing.json();
+  await securedContext.request.post(`${securedOrigin}/api/devices/pair`, { data: { code, label: "Browser test device" } });
+  await securedPage.reload();
+  await securedPage.getByRole("button", { name: "Sign out", exact: true }).click();
+  await securedPage.getByTestId("token-gate").waitFor();
+  assert.equal((await securedContext.request.get(`${securedOrigin}/api/session`)).status(), 401);
+  await securedContext.close();
+  console.log("PASS token and paired-device sign out return to the access gate");
 } finally {
   for (const release of releases) release();
   await browser?.close();

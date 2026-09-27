@@ -42,8 +42,14 @@ git --version
 | --- | --- | --- |
 | **A. herdr plugin** (default) | The user wants it to start with herdr | In-app: Settings → Updates |
 | **B. Source checkout** | The user wants to develop it, or asks for a clone | In-app, while the checkout stays on a clean `main` |
+| **C. One-line installer** | The user agrees to install what is missing (herdr, Bun, Node) and to let Tailscale serve the app | In-app, like A |
 
-Use A unless the user says otherwise.
+Use A unless the user says otherwise. C is A plus the prerequisites and step 5 in one command,
+`curl -fsSL https://devswha.github.io/herdr-web-ui/install.sh | sh`: it installs herdr, Bun and
+Node 22 for the user only (no sudo) when they are missing, installs the plugin, starts it when herdr
+runs, and, when Tailscale runs on the PC, serves the app to the tailnet (`tailscale serve`) and
+prints the address as a QR code. It changes the user's Tailscale configuration, so it needs the
+same **Ask** as step 5. Running it again keeps what is there.
 
 ## 3A. Install as a herdr plugin
 
@@ -68,8 +74,9 @@ Start it now. Otherwise it starts the next time herdr starts:
 herdr plugin action invoke devswha.herdr-web-ui.start
 ```
 
-Success prints `herdr web ui listening at http://127.0.0.1:7317`. It may also print
-`no token set: ...`; that is expected for a local-only install.
+The command only queues the action and prints herdr's JSON acknowledgement; the action's own output
+(`herdr web ui listening at http://127.0.0.1:7317`, and possibly `no token set: ...`, expected for a
+local-only install) goes to the plugin log (`herdr plugin log list`). Check it with step 4.
 
 Plugin settings do **not** come from the user's shell. They go in an `env` file:
 
@@ -125,11 +132,14 @@ Without HTTPS, a phone can view the app but cannot install it or receive alerts.
 tailscale serve --bg --https=443 http://127.0.0.1:7317
 ```
 
-**Settings → Phone** in the app shows this step's state: the address that already works as a QR
+Or, from the plugin's directory, `bun scripts/plugin.ts phone`: it runs that command on the first
+free HTTPS port when Tailscale runs and does not serve the app yet, says how to undo it, and prints the
+address as a QR code. **Settings → Phone** in the app shows this step's state: the address that already works as a QR
 code, or the exact command still to run. Who gets in:
 
 - The user's own Tailscale devices get in as the user: `tailscale serve` states the login, and the
-  server compares it with this PC's. Nothing to configure.
+  server compares it with this PC's. Nothing to configure. Other people's logins are refused, and
+  tagged devices (no person's login) need pairing.
 - Any other device (someone else's, or a LAN or public address) is paired: **Settings → Devices**
   on the PC shows a six-digit code and a QR code; the device enters it once. On a headless PC with
   no browser, `bun "$(ls -d ~/.config/herdr/plugins/github/devswha.herdr-web-ui-* | head -1)/scripts/plugin.ts" pair`

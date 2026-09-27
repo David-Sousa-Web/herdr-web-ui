@@ -1024,10 +1024,11 @@ describe("pairing and identity", () => {
   let cookie = "";
   let deviceId = "";
 
-  it("lets this PC in, and lets a proxied stranger in only while nothing is paired", async () => {
+  it("lets this PC in, and not a proxied request with no login while the PC's Tailscale login is known", async () => {
     expect(await auth()).toMatchObject({ authenticated: true, via: "local" });
-    expect(await auth(proxied())).toMatchObject({ authenticated: true, via: "open" });
-    expect((await fetch(`${base()}/api/session`, { headers: proxied() })).status).toBe(200);
+    // tailscale serve names no person for a tagged node: it pairs, even before the first device
+    expect(await auth(proxied())).toMatchObject({ authenticated: false, reason: "pairing_required" });
+    expect((await fetch(`${base()}/api/session`, { headers: proxied() })).status).toBe(401);
   });
 
   it("trusts the PC's own Tailscale login and refuses another", async () => {

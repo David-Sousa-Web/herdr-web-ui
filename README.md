@@ -76,22 +76,34 @@ https://github.com/user-attachments/assets/2f030569-1004-425e-835d-9e775ec6e4c8
 
 ## Quick start
 
-You need a running **[herdr](https://github.com/herdrdev/herdr) 0.9.0+**, **[Bun](https://bun.sh) 1.4+** and **Node 18+**. Node runs the terminal-attach sidecar. Nothing is compiled: the terminal addon comes prebuilt for Linux x64 and arm64 and for macOS, so no Python or C++ toolchain is needed.
-
 > **Want a look first?** [Try it in your browser](https://devswha.github.io/herdr-web-ui/demo/): the app on a fictional session, nothing to install. Nothing in it is live.
 
 > **Setting it up with a coding agent?** Point it at [INSTALL.md](INSTALL.md), a step-by-step guide written for agents.
 
-**1. Install it as a herdr plugin** (recommended).
+**1. Install it** with one line, on Linux (x64, arm64) or macOS:
+
+```bash
+curl -fsSL https://devswha.github.io/herdr-web-ui/install.sh | sh
+```
+
+It does, in order, only what is not done yet:
+
+- **What it runs on.** [herdr](https://github.com/herdrdev/herdr) 0.9.0+, [Bun](https://bun.sh) 1.4+ and Node 18+ (Node runs the terminal sidecar). A missing one is installed for your user only, without sudo: herdr and Bun by their own installers, into `~/.local/bin` and `~/.bun`, and Node 22 from nodejs.org, checked against its published SHA-256, into `~/.local/share/herdr-web-ui/node`. Nothing is compiled.
+- **The app**, as a herdr plugin: herdr builds it and starts it along with itself, on `127.0.0.1:7317`, following the socket of the current herdr session. When herdr is already running, the app starts now.
+- **The phone address.** When Tailscale runs on this PC, it serves the app to your tailnet (`tailscale serve`, see [On your phone](#on-your-phone)), tells you the command that undoes it, and prints the address as a QR code. Without Tailscale, it says what to set up.
+
+Run it again at any time, for example after setting up Tailscale: it keeps what is there and prints the address again.
+
+<details>
+<summary>Other ways to install</summary>
+
+**The plugin alone**, when herdr, Bun and Node are there already. It skips the phone step; run it later with the `phone` command below.
 
 ```bash
 herdr plugin install devswha/herdr-web-ui
 ```
 
-herdr builds the app and starts it along with itself, on `127.0.0.1:7317`, following the socket of the current herdr session.
-
-<details>
-<summary>Or run it from a checkout</summary>
+**From a checkout:**
 
 ```bash
 git clone https://github.com/devswha/herdr-web-ui.git
@@ -106,9 +118,19 @@ bun run start
 
 **2. Open it** at **http://localhost:7317**. Every workspace and pane of your herdr session is in the sidebar. Pick one, or start a new agent with **New session**.
 
-**3. Take it with you** (optional). Serve it over HTTPS, for example with Tailscale, and install it on your phone. See [On your phone](#on-your-phone).
+**3. Take it with you.** Scan the installer's QR code with a phone signed in to the same Tailscale account, then install the app from the browser. See [On your phone](#on-your-phone).
 
-To control the plugin:
+### In a terminal
+
+Two commands print to your terminal, not to herdr's log. `P` is the plugin's directory (`P=.` in a checkout):
+
+```bash
+P="$(ls -d ~/.config/herdr/plugins/github/devswha.herdr-web-ui-* | head -1)"
+bun "$P/scripts/plugin.ts" phone   # the phone address as a QR code; serves the app to your tailnet if nothing does yet
+bun "$P/scripts/plugin.ts" pair    # a pairing code for another device, for a PC with no browser of its own
+```
+
+`pair` prints the code, the address the phone opens when Tailscale serves one, and that address as a QR code. Neither is a herdr action: herdr keeps an action's output in its log, and a pairing code belongs on the screen. The actions start, stop and report on the server:
 
 ```bash
 herdr plugin action invoke devswha.herdr-web-ui.start    # leaves a running server alone
@@ -116,16 +138,17 @@ herdr plugin action invoke devswha.herdr-web-ui.status
 herdr plugin action invoke devswha.herdr-web-ui.stop
 ```
 
-**Headless PC?** With no browser to open Settings → Devices in, get a pairing code in the terminal:
+Its PID and log live under `HERDR_PLUGIN_STATE_DIR`. For persistent settings (see [Configuration](#configuration)), add `KEY=value` lines to the `env` file in the directory that `herdr plugin config-dir devswha.herdr-web-ui` prints. Protect that file if it holds a token.
+
+### Uninstall
 
 ```bash
-bun "$(ls -d ~/.config/herdr/plugins/github/devswha.herdr-web-ui-* | head -1)/scripts/plugin.ts" pair   # plugin install
-bun scripts/plugin.ts pair                                                                             # from a checkout
+herdr plugin action invoke devswha.herdr-web-ui.stop
+herdr plugin uninstall devswha.herdr-web-ui
+tailscale serve --https=<port> off    # the port the installer printed, if it served the app
 ```
 
-It prints the code, the address the phone opens when Tailscale serves one, and that address as a QR code. It is a command to run in a terminal, not a herdr action: herdr keeps an action's output in its log, and a pairing code belongs on the screen, not in a log.
-
-Its PID and log live under `HERDR_PLUGIN_STATE_DIR`. For persistent settings (see [Configuration](#configuration)), add `KEY=value` lines to the `env` file in the directory that `herdr plugin config-dir devswha.herdr-web-ui` prints. Protect that file if it holds a token.
+The installer's herdr, Bun and Node stay, since other tools may use them: `~/.local/bin/herdr`, `~/.bun`, and `~/.local/share/herdr-web-ui/node` with its link `~/.local/bin/node`. Push keys and paired devices are in `~/.config/herdr-web-ui`.
 
 ## Supported agents
 
@@ -164,7 +187,9 @@ Serve the app over **HTTPS** to install it and receive push alerts. The simplest
 tailscale serve --bg --https=443 http://127.0.0.1:7317
 ```
 
-Only devices in your tailnet can open that address. If they are all yours, that is the whole setup; otherwise, see [Access and safety](#access-and-safety).
+The one-line installer runs this for you when Tailscale runs on the PC and does not serve the app yet, on the first free port of 443, 8443, 7317 and 17317, and prints the command that undoes it. On Linux, `tailscale serve` needs root or `sudo tailscale set --operator=$USER` once; the installer says so when Tailscale refuses.
+
+Only devices in your tailnet can open that address, and only yours get in without a code: see [Access and safety](#access-and-safety).
 
 **Settings → Phone** in the app does this step for you as far as it can: it shows the address Tailscale already serves for this PC as a QR code, or the exact command still to run, and the address it will give.
 
@@ -196,8 +221,8 @@ More in [remote PCs](docs/remote-pcs.md).
 
 Anyone who can reach the server can type into your terminals, so what matters is who gets in. It listens on `127.0.0.1` by default, which means only this computer. From anywhere else, a request gets in in one of three ways:
 
-- **It is you, says Tailscale.** `tailscale serve` states the requesting device's Tailscale login in a header it strips from anything incoming. A login that matches this PC's own gets in; another login is refused. Nothing to set up.
-- **It is a paired device.** **Settings → Devices**, on the PC (or on a device already paired), shows a six-digit code that lives ten minutes and a QR code that carries it. On a headless PC, the `pair` command prints the same in its terminal (see [Quick start](#quick-start)); Devices also shows the pairing link as text, to send to the other device. The other device enters it once and keeps its own credential in an HttpOnly cookie; the list shows it, and **Revoke** ends it at its next request.
+- **It is you, says Tailscale.** `tailscale serve` states the requesting device's Tailscale login in a header it strips from anything incoming. A login that matches this PC's own gets in; another login is refused, and a tagged device (one with no person's login) needs pairing. Nothing to set up.
+- **It is a paired device.** **Settings → Devices**, on the PC (or on a device already paired), shows a six-digit code that lives ten minutes and a QR code that carries it. On a headless PC, the `pair` command prints the same in its terminal (see [In a terminal](#in-a-terminal)); Devices also shows the pairing link as text, to send to the other device. The other device enters it once and keeps its own credential in an HttpOnly cookie; the list shows it, and **Revoke** ends it at its next request.
 - **It holds the token.** `HERDR_WEB_TOKEN`, for scripts and proxies, as a cookie after sign-in or as `Authorization: Bearer <token>`. When a token is set it gates everything, this computer included, as before.
 
 | How you reach it | What gets you in |
@@ -209,7 +234,7 @@ Anyone who can reach the server can type into your terminals, so what matters is
 | Your LAN (`HOST=0.0.0.0` or a LAN address) | Pair each device, or set a token |
 | A public domain or reverse proxy | Pair each device, or set a token, with HTTPS. The proxy must send `X-Forwarded-For`. Never `tailscale funnel` it |
 
-Until the first device is paired, and with no token set, a LAN or proxied address is open to anyone who reaches it, as it always was: the server warns on startup. Pairing the first device closes it for good; revoking every device does not reopen it. This computer itself stays in whatever happens, so you can never lock yourself out: revoke everything and pair again from `http://localhost:7317`.
+Until the first device is paired, and with no token set, a LAN or proxied address is open to anyone who reaches it, as it always was: the server warns on startup. The exception is a proxy on this PC while its Tailscale login is known, as with `tailscale serve`: a request that carries no login there needs pairing from the start. Pairing the first device closes it for good; revoking every device does not reopen it. This computer itself stays in whatever happens, so you can never lock yourself out: revoke everything and pair again from `http://localhost:7317`.
 
 A TLS proxy should send `x-forwarded-proto: https` so cookies are marked Secure. The pairing code is a one-time secret: five wrong tries spend it.
 

@@ -5,6 +5,10 @@
  * and the startup hook after a herdr restart. Requires Docker and network; nothing on the host
  * changes. It installs a pushed ref, by default the current branch.
  *
+ * ONE_LINE=1 is the other door: a box with curl and git but no Node, herdr or Bun, and this
+ * checkout's install.sh piped into sh as `curl … | sh` would, before herdr ever runs. It installs
+ * the plugin at `ref` (install.sh reads HERDR_WEB_UI_REF), and the startup hook brings the app up.
+ *
  *   bun scripts/fresh-install-docker.ts [owner/repo] [ref]      KEEP=1 leaves the container behind
  */
 import assert from "node:assert/strict";
@@ -12,6 +16,7 @@ import assert from "node:assert/strict";
 const source = process.argv[2] ?? originSlug();
 const ref = process.argv[3] ?? Bun.spawnSync(["git", "rev-parse", "--abbrev-ref", "HEAD"]).stdout.toString().trim();
 const name = `herdr-fresh-install-${process.pid}`;
+const oneLine = process.env["ONE_LINE"] === "1";
 const NOISE = /cannot set terminal process group|no job control in this shell|tcsetattr: Inappropriate ioctl/;
 
 function originSlug(): string {
@@ -38,15 +43,55 @@ const step = async <T>(label: string, run: () => Promise<T>): Promise<T> => {
   return result;
 };
 
-console.log(`fresh install of ${source}@${ref} in a clean Ubuntu 24.04 (Node 18, no Python, make or compiler)`);
+console.log(`fresh install of ${source}@${ref} in a clean Ubuntu 24.04 (${oneLine ? "no Node, herdr or Bun: install.sh" : "Node 18"}, no Python, make or compiler)`);
 try {
-  await step("container: base image, curl, git, Node 18, a user", async () => {
+  await step(`container: base image, curl, git, ${oneLine ? "" : "Node 18, "}a user`, async () => {
     await docker(["run", "-d", "--name", name, "--hostname", "fresh-pc", "ubuntu:24.04", "sleep", "infinity"]);
-    await docker(["exec", name, "bash", "-c", "export DEBIAN_FRONTEND=noninteractive; apt-get update -qq >/dev/null && apt-get install -y -qq --no-install-recommends curl ca-certificates git unzip xz-utils nodejs >/dev/null && useradd -m -s /bin/bash alice"]);
+    await docker(["exec", name, "bash", "-c", `export DEBIAN_FRONTEND=noninteractive; apt-get update -qq >/dev/null && apt-get install -y -qq --no-install-recommends curl ca-certificates git unzip xz-utils ${oneLine ? "" : "nodejs"} >/dev/null && useradd -m -s /bin/bash alice`]);
     const tools = await docker(["exec", name, "bash", "-c", "node --version; for t in python3 make g++ cc; do command -v $t >/dev/null && echo \"$t present\"; done; true"]);
-    assert.match(tools, /^v18\./m, "the distro Node is 18");
+    if (!oneLine) assert.match(tools, /^v18\./m, "the distro Node is 18");
     assert.doesNotMatch(tools, /present/, "no build toolchain in the box");
   });
+  if (oneLine) await oneLineInstall();
+  else await pluginInstall();
+} finally {
+  if (process.env["KEEP"] === "1") console.log(`container kept: docker exec -it -u alice ${name} bash -li`);
+  else await docker(["rm", "-f", name]).catch(() => {});
+}
+
+/** install.sh as `curl … | sh` runs it, before herdr ever ran; then herdr's startup hook starts the app */
+async function oneLineInstall(): Promise<void> {
+  await docker(["cp", "install.sh", `${name}:/tmp/install.sh`]);
+  const out = await step("install.sh: herdr, Bun, Node and the plugin", () => asUser(`cat /tmp/install.sh | HERDR_WEB_UI_REF=${ref} sh 2>&1; echo "exit=$?"`));
+  assert.match(out, /exit=0/, `install.sh failed:\n${out.slice(-2500)}`);
+  assert.match(out, /Installed /, `the plugin install did not finish:\n${out.slice(-2500)}`);
+  assert.doesNotMatch(out, /gyp ERR|node-gyp/, "nothing compiled");
+  assert.match(out, /herdr is not running/, "no herdr yet, so no start");
+  assert.match(out, /install Tailscale/, `the phone step names what is missing:\n${out.slice(-1500)}`);
+  assert.match(await asUser("herdr --version; bun --version; node --version"), /^v22\./m, "install.sh's Node, on a new terminal's PATH");
+  await step("herdr starts, and the app with it", async () => {
+    await asUser("setsid nohup herdr server > ~/herdr-server.log 2>&1 < /dev/null &");
+    const health = await asUser('for i in $(seq 1 30); do if curl -sf http://127.0.0.1:7317/api/health >/dev/null; then echo "up after ${i}s"; exit 0; fi; sleep 1; done; echo TIMEOUT; herdr plugin log list 2>&1 | tail -c 1500; exit 1');
+    console.log(`  ${/up after \d+s/.exec(health)?.[0] ?? health.trim().split("\n").pop()}`);
+  });
+  await step("a terminal through the sidecar, on install.sh's Node", async () => {
+    const out = await asUser('cd ~/.config/herdr/plugins/github/devswha.herdr-web-ui-*/ && node server/pty/smoke.mjs && echo PTY_OK');
+    assert.match(out, /PTY_OK/, `the bundled PTY smoke test failed:\n${out.slice(-1500)}`);
+  });
+  const again = await step("install.sh again: keeps what is there", () => asUser(`cat /tmp/install.sh | sh 2>&1; echo "exit=$?"`));
+  assert.match(again, /exit=0/, again.slice(-1500));
+  assert.match(again, /already installed/);
+  assert.doesNotMatch(again, /not running yet/, "the app is up");
+  // the usual case: herdr already runs, and builds the plugin with its own PATH, not install.sh's
+  await asUser("herdr plugin uninstall devswha.herdr-web-ui >/dev/null 2>&1; curl -sf http://127.0.0.1:7317/api/health >/dev/null && pkill -f server/managed.ts; true");
+  const running = await step("install.sh with herdr running: builds, starts and waits", () => asUser(`cat /tmp/install.sh | HERDR_WEB_UI_REF=${ref} sh 2>&1; echo "exit=$?"`));
+  assert.match(running, /exit=0/, running.slice(-2500));
+  assert.match(running, /Installed /, running.slice(-2500));
+  assert.doesNotMatch(running, /not running yet|did not start/, running.slice(-1500));
+  console.log(`\nA bare Ubuntu 24.04 goes from one line to a running herdr web ui. install.sh said:\n${out.split("\n").filter((line) => /^herdr web ui|Installed /.test(line)).map((l) => `  ${l.trim()}`).join("\n")}`);
+}
+
+async function pluginInstall(): Promise<void> {
   await step("herdr and Bun from their installers", async () => {
     await asUser("curl -fsSL https://herdr.dev/install.sh | sh >/dev/null 2>&1; curl -fsSL https://bun.sh/install | bash >/dev/null 2>&1");
     const versions = await asUser("herdr --version; bun --version");
@@ -79,7 +124,4 @@ try {
   });
   const said = install.split("\n").filter((line) => /Installed |Config:/.test(line));
   console.log(`\nA new user on a bare Ubuntu 24.04 gets a working herdr web ui. herdr said:\n${said.map((l) => `  ${l.trim()}`).join("\n")}`);
-} finally {
-  if (process.env["KEEP"] === "1") console.log(`container kept: docker exec -it -u alice ${name} bash -li`);
-  else await docker(["rm", "-f", name]).catch(() => {});
 }

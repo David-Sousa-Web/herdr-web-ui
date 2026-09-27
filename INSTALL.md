@@ -132,7 +132,8 @@ Without HTTPS, a phone can view the app but cannot install it or receive alerts.
 tailscale serve --bg --https=443 http://127.0.0.1:7317
 ```
 
-Or, from the plugin's directory, `bun scripts/plugin.ts phone`: it runs that command on the first
+Or run the one-line installer (method C) again, which installs nothing when the app is there, or
+`bun scripts/plugin.ts phone` from a source checkout: it runs that command on the first
 free HTTPS port when Tailscale runs and does not serve the app yet, says how to undo it, and prints the
 address as a QR code. **Settings → Phone** in the app shows this step's state: the address that already works as a QR
 code, or the exact command still to run. Who gets in:

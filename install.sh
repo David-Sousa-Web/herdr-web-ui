@@ -53,6 +53,29 @@ install_node() {
   installed_here="$installed_here node"
 }
 
+# herdr's checkout stays at the version first installed: Settings → Updates builds each newer release
+# in the app's state dir and runs it from there (server/updater.ts, current.json). The directory of the
+# code that runs now, so the phone step is the running version's, not the first install's.
+running_code() {
+  state="${HERDR_WEB_STATE_DIR:-${XDG_CONFIG_HOME:-$HOME/.config}/herdr-web-ui}"
+  head=$(git -C "$1" rev-parse HEAD 2>/dev/null || true)
+  # shellcheck disable=SC2016 # JavaScript, not shell
+  bun -e '
+    const [root, state, head] = process.argv.slice(1);
+    const { readdirSync, readFileSync } = await import("node:fs");
+    let found = root;
+    try {
+      for (const name of readdirSync(`${state}/updates`)) {
+        try {
+          const saved = JSON.parse(readFileSync(`${state}/updates/${name}/current.json`, "utf8"));
+          if (saved.source_revision === head && String(saved.directory).startsWith(`${state}/updates/${name}/release-`)) found = saved.directory;
+        } catch {}
+      }
+    } catch {}
+    console.log(found);
+  ' "$1" "$state" "$head"
+}
+
 main() {
   case "$(uname -s)" in
     Linux) os=linux ;;
@@ -131,11 +154,26 @@ main() {
     say "herdr is not running, so neither is the app yet: it starts with herdr. Run: herdr"
   fi
 
-  if grep -q '"phone"' "$root/scripts/plugin.ts" 2>/dev/null; then
-    echo
-    bun "$root/scripts/plugin.ts" phone </dev/null || true
+  echo
+  code=$(running_code "$root")
+  if grep -q '"phone"' "$code/scripts/plugin.ts" 2>/dev/null; then
+    bun "$code/scripts/plugin.ts" phone </dev/null || true
   else
-    say "this install predates the phone step: update it in Settings → Updates, then run this again"
+    # a release from before the phone step: the address the running app already knows, as a QR code
+    origin=$(bun "$root/scripts/plugin.ts" status </dev/null | awk '$1 == "running" { print $2 }')
+    url=""
+    [ -z "$origin" ] || url=$(curl -fsS --max-time 5 "$origin/api/access" 2>/dev/null | bun -e 'try { console.log(JSON.parse(await Bun.stdin.text()).tailscale?.serving_url ?? "") } catch { console.log("") }')
+    [ -z "$origin" ] || say "on this PC: $origin"
+    if [ -n "$url" ]; then
+      say "on your phone: $url"
+      # the app's own QR library, there since 0.3.11 for Settings → Phone
+      if [ -d "$code/node_modules/qrcode-generator" ]; then
+        # shellcheck disable=SC2016 # JavaScript, not shell
+        (cd "$code" && bun -e 'const { default: qr } = await import("qrcode-generator"); const c = qr(0, "M"); c.addData(process.argv[1]); c.make(); console.log(c.createASCII(1, 1))' "$url") || true
+      fi
+    else
+      say "no phone address yet, and this version cannot set one up: update it in Settings → Updates, then run this again"
+    fi
   fi
 
   case ":$original_path:" in

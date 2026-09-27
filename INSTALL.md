@@ -78,15 +78,18 @@ The command only queues the action and prints herdr's JSON acknowledgement; the 
 (`herdr web ui listening at http://127.0.0.1:7317`, and possibly `no token set: ...`, expected for a
 local-only install) goes to the plugin log (`herdr plugin log list`). Check it with step 4.
 
-Plugin settings do **not** come from the user's shell. They go in a `.env` file:
+Plugin settings do **not** come from the user's shell. They go in an `env` file (no dot):
 
 ```bash
 CONFIG_DIR="$(herdr plugin config-dir devswha.herdr-web-ui)"
-echo "$CONFIG_DIR/.env"
+echo "$CONFIG_DIR/env"
 ```
 
-The file holds `KEY=value` lines. An `env` file (no dot) in the same directory, from older
-installs, is still read and wins over `.env`. After editing either, restart the plugin:
+The file holds `KEY=value` lines. A plugin checkout from 0.3.25 on also reads `.env` there (the name
+herdr's plugin docs use), and `.env` wins where both set a key. An older checkout reads only `env`,
+and in-app updates do not replace the checkout: reinstall the plugin (see [Update](#update)) before
+relying on `.env`. `bun "$(ls -d ~/.config/herdr/plugins/github/devswha.herdr-web-ui-* | head -1)/scripts/plugin.ts" status`
+prints the files it read. After editing, restart the plugin:
 
 ```bash
 herdr plugin action invoke devswha.herdr-web-ui.stop
@@ -150,7 +153,7 @@ code, or the exact command still to run. Who gets in:
   without printing it. For the plugin:
 
    ```bash
-   CONFIG_ENV="$(herdr plugin config-dir devswha.herdr-web-ui)/.env"
+   CONFIG_ENV="$(herdr plugin config-dir devswha.herdr-web-ui)/env"
    touch "$CONFIG_ENV" && chmod 600 "$CONFIG_ENV"
    printf 'HERDR_WEB_TOKEN=%s\n' "$(openssl rand -hex 32)" >> "$CONFIG_ENV"
    ```

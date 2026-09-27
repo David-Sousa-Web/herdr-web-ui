@@ -13,9 +13,11 @@ between releases do not reach them. Remote-PC runtime bundles are versioned sepa
 - README: a sample of the installer's output, from a PC that had herdr but no Bun or Node.
 
 ### Fixed
-- The plugin reads its settings from `.env` in herdr's plugin config dir, the name herdr's plugin
-  docs suggest; it used to read only `env`, so a `.env` (say, `HOST=0.0.0.0` for a reverse proxy)
-  was silently ignored. `env` is still read and wins over `.env`.
+- The plugin also reads its settings from `.env` in herdr's plugin config dir, the name herdr's
+  plugin docs use; it read only `env`, so a `.env` (say, `HOST=0.0.0.0` for a reverse proxy) was
+  silently ignored. `env` is still read; where both set a key to different values, `.env` wins and
+  `start` and `status` name the keys (never their values). `status` prints the files it read. The
+  plugin checkout runs this, and in-app updates do not replace it: reinstall the plugin to get it.
 
 ## [0.3.24] - 2026-09-27
 

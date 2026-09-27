@@ -1110,9 +1110,8 @@ describe("pairing and identity", () => {
         const withToken = await pairCli(secured.port);
         expect(withToken.exitCode, withToken.err).toBe(0);
         expect(withToken.out).toMatch(/Pairing code: \d{3} \d{3}/);
-        // the older `env` file is still read, and wins over `.env`
-        writeFileSync(join(configDir, ".env"), "HERDR_WEB_TOKEN=stale\n");
-        writeFileSync(join(configDir, "env"), "HERDR_WEB_TOKEN=cli-t0k3n\n");
+        // `.env` wins over a stale token in the older `env` file
+        writeFileSync(join(configDir, "env"), "HERDR_WEB_TOKEN=stale\n");
         const withLegacy = await pairCli(secured.port);
         expect(withLegacy.exitCode, withLegacy.err).toBe(0);
         expect(withLegacy.out).toMatch(/Pairing code: \d{3} \d{3}/);

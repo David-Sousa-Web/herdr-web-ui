@@ -45,6 +45,14 @@ describe("parseMarkdown", () => {
     expect(parseMarkdown("\\[unfinished")).toEqual([{ type: "paragraph", lines: [[{ type: "text", value: "\\[unfinished" }]] }]);
   });
 
+  it("keeps later markdown and code intact after an unclosed display formula", () => {
+    for (const code of ["raw code", "\\]"]) {
+      expect(parseMarkdown(`\\[unfinished\n\n# Still a heading\n\n\`\`\`tex\n${code}\n\`\`\`\n\n- still a list`).map((block) => block.type)).toEqual([
+        "paragraph", "heading", "code", "list",
+      ]);
+    }
+  });
+
   it("parses a GFM table", () => {
     const [table] = parseMarkdown("| Name | Value |\n| --- | --- |\n| a | b |");
     expect(table).toMatchObject({ type: "table", header: [[{ value: "Name" }], [{ value: "Value" }]], rows: [[[{ value: "a" }], [{ value: "b" }]]] });

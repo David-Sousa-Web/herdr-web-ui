@@ -228,24 +228,23 @@ export function parseMarkdown(source: string): MarkdownBlock[] {
       const body: string[] = [];
       let next = index;
       let part = display[1] ?? "";
+      let complete = false;
       while (true) {
         const close = part.indexOf("\\]");
         if (close !== -1 && part.slice(close + 2).trim() === "") {
           body.push(part.slice(0, close));
           blocks.push({ type: "math", value: body.join("\n").trim() });
           index = next + 1;
+          complete = true;
           break;
         }
         body.push(part);
         next += 1;
-        if (next >= lines.length) {
-          blocks.push({ type: "paragraph", lines: body.map((text, n) => parseInline(n === 0 ? `\\[${text}` : text)) });
-          index = next;
-          break;
-        }
+        if (next >= lines.length || /^\s{0,3}```/.test(lineAt(lines, next))) break;
         part = lineAt(lines, next);
       }
-      continue;
+      // An incomplete formula stays prose; later headings and fences still parse normally.
+      if (complete) continue;
     }
 
     const heading = /^(#{1,6})\s+(.+)$/.exec(line);

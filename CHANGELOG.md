@@ -7,6 +7,8 @@ between releases do not reach them. Remote-PC runtime bundles are versioned sepa
 
 ## [Unreleased]
 
+## [0.3.22] - 2026-09-27
+
 ### Added
 - A one-line installer: `curl -fsSL https://devswha.github.io/herdr-web-ui/install.sh | sh`
   installs what is missing (herdr, Bun, Node 22, for the user only and without sudo), installs the
@@ -499,7 +501,8 @@ First public version.
 - Installable PWA, a mobile key bar, web push alerts and optional token auth.
 - Distribution as a herdr plugin.
 
-[Unreleased]: https://github.com/devswha/herdr-web-ui/compare/v0.3.21...HEAD
+[Unreleased]: https://github.com/devswha/herdr-web-ui/compare/v0.3.22...HEAD
+[0.3.22]: https://github.com/devswha/herdr-web-ui/compare/v0.3.21...v0.3.22
 [0.3.21]: https://github.com/devswha/herdr-web-ui/compare/v0.3.20...v0.3.21
 [0.3.20]: https://github.com/devswha/herdr-web-ui/compare/v0.3.19...v0.3.20
 [0.3.19]: https://github.com/devswha/herdr-web-ui/compare/v0.3.18...v0.3.19

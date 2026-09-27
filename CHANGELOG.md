@@ -7,6 +7,11 @@ between releases do not reach them. Remote-PC runtime bundles are versioned sepa
 
 ## [Unreleased]
 
+### Changed
+- The installer's addresses are links a terminal can open with a click (OSC 8), plain text when
+  the output goes to a file or log. It also names this PC's Tailscale IP next to the phone address,
+  which stays the MagicDNS name: the HTTPS certificate is for the name, not the IP.
+
 ## [0.3.23] - 2026-09-27
 
 ### Fixed

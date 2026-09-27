@@ -20,7 +20,7 @@ export interface TailscaleOutput {
   serve: string | null;
 }
 
-interface StatusJson { BackendState?: string; Self?: { DNSName?: string; UserID?: number | string }; User?: Record<string, { LoginName?: string }> }
+interface StatusJson { BackendState?: string; Self?: { DNSName?: string; UserID?: number | string; TailscaleIPs?: string[] }; User?: Record<string, { LoginName?: string }> }
 interface ServeJson {
   TCP?: Record<string, { HTTPS?: boolean; HTTP?: boolean }>;
   /** "host:port" -> handlers by path */
@@ -108,6 +108,11 @@ export function parseTailscaleOwner(status: string | null): string | null {
   const id = parsed?.Self?.UserID;
   if (id === undefined || id === null) return null;
   return parsed?.User?.[String(id)]?.LoginName || null;
+}
+
+/** This PC's IPv4 address on the tailnet (100.x.y.z), from `tailscale status --json`; null when it has none. */
+export function parseTailscaleIp(status: string | null): string | null {
+  return parseJson<StatusJson>(status)?.Self?.TailscaleIPs?.find((ip) => /^\d+\.\d+\.\d+\.\d+$/.test(ip)) ?? null;
 }
 
 const OWNER_TTL_MS = 5 * 60_000;

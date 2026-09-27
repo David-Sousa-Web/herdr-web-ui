@@ -1106,7 +1106,7 @@ describe("pairing and identity", () => {
       const tokenState = mkdtempSync(join(tmpdir(), "herdr-pair-cli-token-"));
       const secured = createServer({ port: 0, stateDir: tokenState, token: "cli-t0k3n", tailscaleOwner: null });
       try {
-        writeFileSync(join(configDir, "env"), "HERDR_WEB_TOKEN=cli-t0k3n\n");
+        writeFileSync(join(configDir, ".env"), "HERDR_WEB_TOKEN=cli-t0k3n\n");
         const withToken = await pairCli(secured.port);
         expect(withToken.exitCode, withToken.err).toBe(0);
         expect(withToken.out).toMatch(/Pairing code: \d{3} \d{3}/);

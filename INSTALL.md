@@ -78,11 +78,11 @@ The command only queues the action and prints herdr's JSON acknowledgement; the 
 (`herdr web ui listening at http://127.0.0.1:7317`, and possibly `no token set: ...`, expected for a
 local-only install) goes to the plugin log (`herdr plugin log list`). Check it with step 4.
 
-Plugin settings do **not** come from the user's shell. They go in an `env` file:
+Plugin settings do **not** come from the user's shell. They go in a `.env` file:
 
 ```bash
 CONFIG_DIR="$(herdr plugin config-dir devswha.herdr-web-ui)"
-echo "$CONFIG_DIR/env"
+echo "$CONFIG_DIR/.env"
 ```
 
 The file holds `KEY=value` lines. After editing it, restart the plugin:
@@ -149,7 +149,7 @@ code, or the exact command still to run. Who gets in:
   without printing it. For the plugin:
 
    ```bash
-   CONFIG_ENV="$(herdr plugin config-dir devswha.herdr-web-ui)/env"
+   CONFIG_ENV="$(herdr plugin config-dir devswha.herdr-web-ui)/.env"
    touch "$CONFIG_ENV" && chmod 600 "$CONFIG_ENV"
    printf 'HERDR_WEB_TOKEN=%s\n' "$(openssl rand -hex 32)" >> "$CONFIG_ENV"
    ```

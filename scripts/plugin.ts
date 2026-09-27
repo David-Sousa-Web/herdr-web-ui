@@ -13,7 +13,7 @@
  * - herdr injects HERDR_SOCKET_PATH; the server reads HERDR_SOCKET. Without the
  *   mapping a named session's plugin would talk to the default socket.
  * - plugin commands inherit herdr's environment, not the user's shell, so the
- *   token and any overrides are read from `env` in HERDR_PLUGIN_CONFIG_DIR.
+ *   token and any overrides are read from `.env` in HERDR_PLUGIN_CONFIG_DIR.
  */
 
 import { spawn } from "node:child_process";
@@ -48,7 +48,7 @@ function herdrConfigDir(): string | null {
   try {
     const result = Bun.spawnSync([herdr, "plugin", "config-dir", "devswha.herdr-web-ui"], { stdout: "pipe", stderr: "ignore", timeout: 3000 });
     const dir = result.exitCode === 0 ? result.stdout.toString().trim() : "";
-    return dir !== "" && existsSync(join(dir, "env")) ? dir : null;
+    return dir !== "" && existsSync(join(dir, ".env")) ? dir : null;
   } catch {
     return null;
   }
@@ -56,7 +56,7 @@ function herdrConfigDir(): string | null {
 
 /** `KEY=value` lines from the plugin's config dir: the token lives here, not in herdr's env. */
 function userEnv(): Record<string, string> {
-  const file = join(CONFIG_DIR, "env");
+  const file = join(CONFIG_DIR, ".env");
   if (!existsSync(file)) return {};
   const vars: Record<string, string> = {};
   for (const line of readFileSync(file, "utf8").split("\n")) {
@@ -152,7 +152,7 @@ async function start(): Promise<number> {
     if (await health()) {
       process.stdout.write(`herdr web ui listening at ${origin}\n`);
       if ((env["HERDR_WEB_TOKEN"] ?? "") === "") {
-        process.stdout.write(`no token set: your own Tailscale devices get in as you; pair any other device in Settings → Devices, or put HERDR_WEB_TOKEN=<token> in ${join(CONFIG_DIR, "env")}\n`);
+        process.stdout.write(`no token set: your own Tailscale devices get in as you; pair any other device in Settings → Devices, or put HERDR_WEB_TOKEN=<token> in ${join(CONFIG_DIR, ".env")}\n`);
       }
       return 0;
     }

@@ -94,6 +94,12 @@ It does, in order, only what is not done yet:
 
 Run it again at any time, for example after setting up Tailscale: it keeps what is there and prints the address and QR code again.
 
+<p align="center">
+  <img src="docs/screenshots/install.png" alt="The installer's output on a PC that had herdr but no Bun or Node: Bun and Node installed, the herdr plugin installed, the app served to the tailnet with the command that undoes it, the phone address, the PC's Tailscale IP, and a QR code that opens the app on the phone" width="760">
+</p>
+
+<sub>A PC named fresh-pc on a sample tailnet (alice@example.com): the names and the QR code are placeholders.</sub>
+
 <details>
 <summary>Other ways to install</summary>
 

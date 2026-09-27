@@ -7,6 +7,11 @@ between releases do not reach them. Remote-PC runtime bundles are versioned sepa
 
 ## [Unreleased]
 
+### Changed
+- The installer keeps herdr's plugin install preview (every command of the manifest) to itself and
+  prints only herdr's `Installed ...` line; when the install fails, it prints all of herdr's output.
+- README: a sample of the installer's output, from a PC that had herdr but no Bun or Node.
+
 ## [0.3.24] - 2026-09-27
 
 ### Changed

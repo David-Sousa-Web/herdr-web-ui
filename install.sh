@@ -140,7 +140,16 @@ main() {
     say "already installed as a herdr plugin; Settings → Updates keeps it current"
   else
     say "installing the herdr plugin (herdr clones and builds it: about a minute)"
-    herdr plugin install "$REPO" ${HERDR_WEB_UI_REF:+--ref "$HERDR_WEB_UI_REF"} --yes </dev/null
+    # herdr previews the whole manifest first; on success its last word is enough, on failure all of it
+    log=$(mktemp)
+    if herdr plugin install "$REPO" ${HERDR_WEB_UI_REF:+--ref "$HERDR_WEB_UI_REF"} --yes </dev/null >"$log" 2>&1; then
+      grep '^Installed ' "$log" || true
+      rm -f "$log"
+    else
+      cat "$log" >&2
+      rm -f "$log"
+      fail "herdr could not install the plugin; its output is above"
+    fi
   fi
 
   root=$(herdr plugin list --json | bun -e 'const d = JSON.parse(await Bun.stdin.text()); console.log(d.result.plugins.find((p) => p.plugin_id === "'"$PLUGIN"'")?.plugin_root ?? "")')

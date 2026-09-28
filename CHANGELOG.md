@@ -8,6 +8,9 @@ between releases do not reach them. Remote-PC runtime bundles are versioned sepa
 ## [Unreleased]
 
 ### Fixed
+- On iPhone (iOS 26 and later) the header of the home-screen app was blurred, not in Safari. iOS
+  lays its Liquid Glass edge blur over the top of an installed web app unless a fixed or sticky box
+  with a background covers that edge; the header is now sticky, so iOS takes its color there.
 - Alerts could be turned on but not off: once on, the bell was disabled. It is now a switch for
   this device. Off drops the device's push subscription (the server forgets it) and silences the
   page's own alerts; on subscribes again. The choice is kept per device.

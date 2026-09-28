@@ -8,6 +8,9 @@ between releases do not reach them. Remote-PC runtime bundles are versioned sepa
 ## [Unreleased]
 
 ### Fixed
+- Android's system Back button closes a file or video preview and returns to the
+  chat instead of leaving the app. Closing with X, Escape or the backdrop also
+  consumes the preview's history entry; Forward restores the original file target.
 - GJC chat only selects a unique transcript file held open by the pane's process.
   Panes sharing a working directory no longer follow whichever session was modified
   last. When exact file evidence is unavailable (including directory-only descriptors

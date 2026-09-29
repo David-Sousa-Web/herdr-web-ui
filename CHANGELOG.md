@@ -27,6 +27,7 @@ between releases do not reach them. Remote-PC runtime bundles are versioned sepa
   `HERDR_WEB_UI_REF` still picks another branch or tag.
 
 ### Fixed
+- Enforce device permissions and request origins consistently, persist device changes before reporting success, and stop alerts after device access is revoked.
 - Show remote conversation images and full tool output, including Codex output inherited from earlier rollouts.
 - Dragging terminal text copies the visible selection immediately, including when an
   installed app's asynchronous clipboard permission is blocked. Scrollback copies

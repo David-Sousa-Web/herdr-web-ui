@@ -2,7 +2,7 @@ import { expect, it } from "bun:test";
 import { mkdirSync, mkdtempSync, rmSync, symlinkSync, utimesSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { gjcBreadcrumbPath, matchGjcTranscript, parseGjcPs } from "./gjc-runtime.ts";
+import { gjcBreadcrumbPath, gjcDisplayCandidates, matchGjcTranscript, parseGjcPs } from "./gjc-runtime.ts";
 
 it("reads macOS terminal/process identity without /proc", () => {
   expect(parseGjcPs("ttys003 Mon Sep 28 10:00:00 2026\n")?.id).toBe("ttys003");
@@ -29,6 +29,28 @@ it("validates breadcrumbs against process age, canonical cwd and the native sess
     writeFileSync(marker, `${home}\n${escape}\n`);
     expect(gjcBreadcrumbPath(home, home, "ttys003", 0)).toBeNull();
   } finally { rmSync(home, { recursive: true, force: true }); }
+});
+
+it("keeps every whole record of a candidate's tail window", () => {
+  const root = mkdtempSync(join(tmpdir(), "gjc-candidates-"));
+  try {
+    mkdirSync(join(root, "project"));
+    const path = join(root, "project", "session.jsonl");
+    // every line is `line` bytes plus its newline: 1024 divides 64 KiB, so that window starts on a record
+    for (const [line, aligned] of [[1000, false], [1023, true]] as const) {
+      const record = (i: number) => {
+        const text = JSON.stringify({ type: "message", message: { role: "assistant", content: [{ type: "text", text: `answer ${String(i).padStart(3, "0")} ` }] } });
+        return text.replace(" \"}]", ` ${"x".repeat(line - text.length)}"}]`);
+      };
+      const full = [JSON.stringify({ type: "session", cwd: "/work" }), ...Array.from({ length: 100 }, (_, i) => record(i))].join("\n") + "\n";
+      writeFileSync(path, full);
+      const start = full.length - 65536;
+      expect(full[start - 1] === "\n").toBe(aligned);
+      const [candidate] = gjcDisplayCandidates(root, "/work");
+      // only a record the window cuts is dropped; the first whole one stays
+      expect(candidate?.text).toBe(full.slice(aligned ? start : full.indexOf("\n", start) + 1));
+    }
+  } finally { rmSync(root, { recursive: true, force: true }); }
 });
 
 it("matches only substantial assistant text and rejects shared or short text", () => {

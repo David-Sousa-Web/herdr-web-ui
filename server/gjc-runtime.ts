@@ -88,7 +88,7 @@ export function matchGjcTranscript(screen: string, candidates: { path: string; t
 }
 
 /** Bound both directory enumeration and content reads; never match an arbitrary subset. */
-function gjcDisplayCandidates(root: string, cwd: string): { path: string; text: string }[] {
+export function gjcDisplayCandidates(root: string, cwd: string): { path: string; text: string }[] {
   try {
     const dirs = readdirSync(root, { withFileTypes: true });
     if (dirs.length > 512) return [];
@@ -108,10 +108,9 @@ function gjcDisplayCandidates(root: string, cwd: string): { path: string; text: 
     if (paths.size > 64) return [];
     return [...paths].map(path => {
       const size = statSync(path).size;
-      const start = Math.max(0, size - 65536);
-      let text = readRange(path, start, size);
-      if (start > 0) text = text.slice(text.indexOf("\n") + 1);
-      return { path, text };
+      // readRange drops through the first newline; starting one byte early keeps a record
+      // the 64 KiB window starts exactly on, and still drops one it cuts
+      return { path, text: readRange(path, Math.max(0, size - 65536 - 1), size) };
     });
   } catch { return []; }
 }

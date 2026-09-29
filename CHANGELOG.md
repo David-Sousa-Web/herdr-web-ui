@@ -7,6 +7,10 @@ between releases do not reach them. Remote-PC runtime bundles are versioned sepa
 
 ## [Unreleased]
 
+### Added
+- The one-line installer ends a first install with one line asking for a GitHub star, so
+  other herdr users can find the app. Reruns, such as the one for the phone address, skip it.
+
 ### Fixed
 - A GJC pane's chat stays on the pane's own session after GJC runs subagents. GJC points its
   terminal breadcrumb at a subagent's transcript while the subagent runs and leaves it

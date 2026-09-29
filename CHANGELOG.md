@@ -7,6 +7,12 @@ between releases do not reach them. Remote-PC runtime bundles are versioned sepa
 
 ## [Unreleased]
 
+### Removed
+- The todo pill at the top right of the chat is gone, with its lane beside the
+  transcript. The chat shows the agent's transcript and nothing pinned over or beside
+  it: a todo call stays in its turn's work block, where it reads as the done count or the
+  step it took and opens to the whole list.
+
 ### Fixed
 - A terminal attach whose helper process could not start (for example, `node` missing from
   PATH) no longer leaves the pane half-open. The pane stayed blank for the next device, and

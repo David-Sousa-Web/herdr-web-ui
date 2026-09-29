@@ -15,6 +15,9 @@ between releases do not reach them. Remote-PC runtime bundles are versioned sepa
   counts the picks, and the custom-answer field is labelled.
 - Enter while an IME is composing in the prompt card's custom answer no longer sends the
   half-composed text.
+- In Safari and other WebKit browsers, the Enter that commits an IME candidate (Korean,
+  Japanese, Chinese) no longer sends the chat message, the prompt card's custom answer or
+  the touch terminal's input line. WebKit delivers it after composition ends, as key code 229.
 - An image attached after typed text gets its own `@path` token: a space goes in front
   of the mention when the text before the caret does not end in whitespace, so the
   chat shows its thumbnail and the agent reads the path.

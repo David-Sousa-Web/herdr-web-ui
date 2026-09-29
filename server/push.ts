@@ -78,6 +78,13 @@ export interface PushService {
   sendTest(endpoint: string): Promise<PushDelivery | null>;
   /** The collector's view of every pane: status baselines and the titles notifications use. */
   seed(panes: readonly HerdrPane[], machineId?: string, machineName?: string): void;
+  /**
+   * After status events were lost, `panes` (every pane on the PC) are the baseline for all
+   * but the `newer` ones, which had an event since this snapshot was asked for. A pane
+   * missing from it is gone: its waiting alert is called off. Nothing is announced: a
+   * change that happened unseen is not news, and an alert it overtook is called off.
+   */
+  resync(panes: readonly HerdrPane[], newer: ReadonlySet<string>, machineId?: string): void;
   /** Schedules the alert this change is worth, and calls off the one it overtakes. */
   onStatus(paneId: string, status: AgentStatus, machineId?: string): Promise<void>;
   onEnded(paneId: string, machineId?: string): Promise<void>;
@@ -326,6 +333,34 @@ export function createPushService(options: PushServiceOptions): PushService {
         const key = paneStorageId(machineId, pane.pane_id);
         titles.set(key, `${machineName ? machineName + " · " : ""}${paneTitle(pane)}`);
         if (!lastStatus.has(key)) lastStatus.set(key, pane.agent_status);
+      }
+    },
+
+    resync(panes, newer, machineId = "local") {
+      const busy = (value: AgentStatus | undefined): boolean => value === "working" || value === "blocked";
+      const present = new Set(panes.map((pane) => paneStorageId(machineId, pane.pane_id)));
+      const newerKeys = new Set([...newer].map((paneId) => paneStorageId(machineId, paneId)));
+      const remotePrefix = `remote:${encodeURIComponent(machineId)}:`;
+      const onThisPc = (key: string): boolean => machineId === "local" ? !key.startsWith("remote:") : key.startsWith(remotePrefix);
+      for (const key of [...lastStatus.keys()]) {
+        if (!onThisPc(key) || present.has(key) || newerKeys.has(key)) continue;
+        // closed while events were lost: no alert may still speak for it
+        callOff(key);
+        turnStart.delete(key);
+        lastStatus.delete(key);
+      }
+      for (const pane of panes) {
+        if (newer.has(pane.pane_id)) continue;
+        const key = paneStorageId(machineId, pane.pane_id);
+        const previous = lastStatus.get(key);
+        const status = pane.agent_status;
+        // done and idle are both at rest: herdr reports a finish nobody has seen as idle
+        if (previous === status || (previous !== undefined && !busy(previous) && !busy(status))) continue;
+        lastStatus.set(key, status);
+        if (previous === undefined) continue;
+        callOff(key);
+        // a turn that began unseen has no known start, like a first sighting mid-turn
+        if (busy(status) !== busy(previous)) turnStart.delete(key);
       }
     },
 

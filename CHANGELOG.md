@@ -7,6 +7,11 @@ between releases do not reach them. Remote-PC runtime bundles are versioned sepa
 
 ## [Unreleased]
 
+### Added
+- The desktop terminal selects with a plain drag and copies on release, like the herdr
+  TUI; Ctrl+C copies a selection instead of interrupting the pane. Selection covers the
+  visible screen, and a wrapped long line copies with line breaks.
+
 ### Removed
 - The todo pill at the top right of the chat is gone, with its lane beside the
   transcript. The chat shows the agent's transcript and nothing pinned over or beside

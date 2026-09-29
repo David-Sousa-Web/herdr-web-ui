@@ -43,6 +43,8 @@ export interface PaneTerminalProps {
   agentStatus?: AgentStatus;
   /** the lens over the pane: the chat transcript, or the live xterm grid (App remembers it per pane) */
   view: PaneView;
+  /** App selected this pane itself (the selected one closed): switching to it must not take the keyboard */
+  autoSelected?: boolean;
   /** xterm font size (settings) */
   terminalFontSize: number;
   /** the resolved UI theme: the xterm theme object mirrors it */
@@ -83,6 +85,7 @@ export function PaneTerminal({
   agent = null,
   agentStatus,
   view,
+  autoSelected = false,
   terminalFontSize,
   theme,
   role = "interact",
@@ -712,7 +715,7 @@ export function PaneTerminal({
     }
     const pane = paneRef.current;
     if (pane && term) socketRef.current?.resize(pane, term.cols, term.rows, true);
-    term?.focus();
+    if (!autoSelected) term?.focus();
   }, [chatView]);
 
   // follow the selected pane
@@ -745,12 +748,21 @@ export function PaneTerminal({
     socket.attach(paneId, term.cols, term.rows);
     // the chat lens covers the grid and its composer takes the keyboard: focusing the hidden
     // grid sent the keys straight to the pane, and showed a phone's IME text mid-screen
-    if (!chatViewRef.current) term.focus();
+    if (!chatViewRef.current && !autoSelected) term.focus();
     return () => {
       socket.detach(paneId);
     };
   }, [paneId]);
 
+
+  // the user picked the pane App had switched to on its own (the same row or lens again,
+  // which changes neither the pane nor the lens): the grid takes the keyboard now
+  const autoSelectedRef = useRef(autoSelected);
+  useEffect(() => {
+    const wasAuto = autoSelectedRef.current;
+    autoSelectedRef.current = autoSelected;
+    if (wasAuto && !autoSelected && !chatViewRef.current) termRef.current?.focus();
+  }, [autoSelected]);
 
   // key-bar taps go through xterm so the onData -> socket path above is reused
   const pressKey = useCallback((key: KeyBarKey) => {
@@ -852,7 +864,7 @@ export function PaneTerminal({
       if (document.activeElement === textarea) textarea.blur();
     } else {
       textarea.removeAttribute("inputmode");
-      if (coarse && !chatView && directTyping) termRef.current?.focus();
+      if (coarse && !chatView && directTyping && !autoSelected) termRef.current?.focus();
     }
   }, [inputLine, coarse, chatView, directTyping, paneId]);
 
@@ -1048,6 +1060,7 @@ export function PaneTerminal({
         <Composer
           key={paneId}
           paneId={paneId}
+          autoFocus={!autoSelected}
           agent={agent}
           agentStatus={agentStatus}
           metadata={chatMetadata?.pane === paneId ? chatMetadata.value : null}

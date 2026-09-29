@@ -247,13 +247,15 @@ Comfortable values are `:root`; the final column is the complete compact overrid
   product name and herdr version.
 
 ### Plan meters (`.usage*`)
-- Beside Settings, one button holding up to four chips (three and `+N` past that): provider mark,
-  mono `--fs-2xs` percent of the limit closest to running out, and a 2px bar on a
-  `--border-strong` track. From 80% the percent and bar take `--status-blocked`; amber stays
-  chrome. A chip whose numbers are stale or missing dims.
+- Beside Settings, one button holding up to four chips (three and `+N` past that), one per
+  account in the user's order: provider mark, mono `--fs-2xs` percent of the limit closest to
+  running out (used, or left when Settings says so), and a 2px bar on a `--border-strong` track
+  filled to that percent. From 80% used the percent and bar take `--status-blocked`; amber stays
+  chrome. A chip whose numbers are stale or missing dims. An account hidden in Settings is
+  left out of the strip and the popover; with every account hidden, neither shows.
 - The button opens a popover above the footer (`--shadow-pop`, `--radius-lg`), as wide as the
-  footer and scrolling past the sidebar's top bar: per provider its mark, name and plan pill,
-  then one row per limit (label, reset time, right-aligned percent) over a 4px bar. A problem
+  footer and scrolling past the sidebar's top bar: per account its mark, name and plan pill with
+  the email or login right-aligned and ellipsized, then one row per limit (label, reset time, right-aligned percent) over a 4px bar. A problem
   note is dim, red for an expired sign-in or a failed request.
 
 ### New session dialog
@@ -327,6 +329,12 @@ Comfortable values are `:root`; the final column is the complete compact overrid
 - Appearance: Dark / Light / System, Comfortable / Compact, terminal font `10–22px`.
 - Composer: Enter sends. Chat: Show thinking. Shortcuts: the complete platform-resolved table.
 - Install reflects installed, promptable or browser-instructions state; About links the repository.
+- Subscription usage: the on switch with one description, then (when on) Used / Remaining and one
+  hairline card of accounts (`.usage-accounts`, `--radius-md`): an uppercase `--bg-elevated` header
+  with **Nearest limit first** at its right once the user has ordered, then one 38px row per account
+  (mark, name, dim ellipsized email, then 28px move-up, move-down and eye controls in fixed columns;
+  a move that cannot happen keeps its column but is not shown). A hidden account's row fades and
+  its eye closes; it stays listed so it can be shown again.
 
 ### Terminal host, key bar and drawer
 - xterm has `scrollback: 0`; wheel/touch gestures reach herdr's alternate-screen scrollback. The

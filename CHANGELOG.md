@@ -15,9 +15,12 @@ between releases do not reach them. Remote-PC runtime bundles are versioned sepa
   omo itself, so the new pane's shell runs `omo` and the dialog waits until it is up.
 - Subscription usage beside Settings: the plan limits of Claude, Codex, Cursor, Copilot,
   Grok and Antigravity, read with the sign-in each tool keeps on the server's PC, which is
-  never refreshed. Each provider shows its limit closest to running out, red from 80%; a
-  tap lists every limit with its reset time. Off until turned on in Settings, since it
-  sends the PC's sign-ins to each provider. `GET /api/usage`.
+  never refreshed. Each account shows its limit closest to running out, red from 80%; a
+  tap lists every limit with its reset time. Two accounts of one provider (a second
+  `~/.codex-*` or `~/.claude-*`, several GitHub CLI or Grok sign-ins) are listed apart,
+  named by their email or login. Settings orders the accounts, hides any, and counts what
+  is used or what is left. Off until turned on in Settings, since it sends the PC's
+  sign-ins to each provider. `GET /api/usage`.
   Sign-in locations and endpoints follow OpenUsage.
 
 ### Changed

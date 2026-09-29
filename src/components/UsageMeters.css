@@ -57,15 +57,16 @@
   left: 2px;
   height: 2px;
   border-radius: var(--radius-pill);
-  background: linear-gradient(to right, var(--text-dim) var(--used), var(--border-strong) var(--used));
+  background: linear-gradient(to right, var(--text-dim) var(--fill), var(--border-strong) var(--fill));
 }
+
 
 .usage-chip.is-high .usage-chip-value {
   color: var(--status-blocked);
 }
 
 .usage-chip.is-high .usage-chip-bar {
-  background: linear-gradient(to right, var(--status-blocked) var(--used), var(--border-strong) var(--used));
+  background: linear-gradient(to right, var(--status-blocked) var(--fill), var(--border-strong) var(--fill));
 }
 
 .usage-chip.has-problem {
@@ -130,6 +131,17 @@
   color: var(--text-strong);
   font-size: var(--fs-sm);
   font-weight: var(--fw-semibold);
+}
+
+.usage-account {
+  flex: 1 1 auto;
+  min-width: 0;
+  overflow: hidden;
+  color: var(--text-dim);
+  font-size: var(--fs-2xs);
+  text-align: right;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 
 .usage-plan {

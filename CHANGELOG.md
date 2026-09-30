@@ -7,6 +7,11 @@ between releases do not reach them. Remote-PC runtime bundles are versioned sepa
 
 ## [Unreleased]
 
+### Added
+- The chat's message box offers the prompt Claude Code suggests next, the grey text in its
+  empty input. It stands as the box's placeholder, and Tab takes it into the box; on a touch
+  screen a dashed chip above the box does the same. Nothing is sent until you send it.
+
 ### Fixed
 - A pane herdr reports waiting for input gets a card in the chat even when no reader knows its
   screen (Codex's collapsed question queue keeps its own handling). A numbered menu that still

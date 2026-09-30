@@ -39,6 +39,8 @@ between releases do not reach them. Remote-PC runtime bundles are versioned sepa
   failing with the host shell's "'sh' is not recognized" (#189).
 - A pane waiting for another web bridge no longer frees its input for a moment and reports the
   wait twice when herdr's refusal of a retry arrives slowly (a busy PC).
+- In the terminal, **Ctrl+Shift+↑/↓** only switches panes. It no longer also types `ESC[1;6A` /
+  `ESC[1;6B` into the pane it switched to ([#215](https://github.com/devswha/herdr-web-ui/pull/215)).
 - On a wide screen, the quick replies above the message box line up with the box instead of
   starting at the chat pane's left edge ([#212](https://github.com/devswha/herdr-web-ui/pull/212)).
 - Queued messages show under the chat lens only. In the terminal lens they stay saved but

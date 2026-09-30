@@ -16,6 +16,9 @@ between releases do not reach them. Remote-PC runtime bundles are versioned sepa
   and when it resets. A tap opens every limit.
 
 ### Fixed
+- `stop` (herdr's Stop action, `bun scripts/plugin.ts stop`) returns once the server is gone.
+  It returned at once, while the old supervisor still held the checkout's lock, so a `start`
+  right after it found that lock and gave up: nothing ran, and it reported no answer after 20s.
 - A pane herdr reports waiting for input gets a card in the chat even when no reader knows its
   screen (Codex's collapsed question queue keeps its own handling). A numbered menu that still
   takes the answer is offered as its options, each answered by typing its number; anything

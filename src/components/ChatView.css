@@ -199,6 +199,12 @@
   margin: var(--space-1) 0 0;
 }
 
+/* a table or text below it in a list item: a little air above and below, as between two items */
+.markdown-list .markdown-table-wrap,
+.markdown-list p {
+  margin: var(--space-1) 0;
+}
+
 .markdown blockquote {
   padding-left: var(--space-3);
   border-left: var(--rail-w) solid var(--border-strong);

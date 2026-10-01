@@ -12,6 +12,11 @@ between releases do not reach them. Remote-PC runtime bundles are versioned sepa
   connection that sent it has closed. It waited behind the message and was sent afterwards, with
   nobody watching. The message itself is still finished for a phone that locks
   ([#235](https://github.com/devswha/herdr-web-ui/pull/235)).
+- A terminal whose grid is not the browser's own (a mirrored pane on a PC whose herdr cannot
+  attach, or a view-only connection) can be reached past the edge of a small screen: a drag pans
+  it on a phone, the wheel or a scrollbar in a small desktop window, and it opens on the rows
+  with the prompt instead of the top of the grid
+  ([#241](https://github.com/devswha/herdr-web-ui/pull/241)).
 
 ## [0.3.38] - 2026-10-01
 

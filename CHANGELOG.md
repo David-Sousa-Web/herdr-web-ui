@@ -7,6 +7,13 @@ between releases do not reach them. Remote-PC runtime bundles are versioned sepa
 
 ## [Unreleased]
 
+### Fixed
+- The chat of an OmO, omp or Gajae Code session shows the reasoning level the session runs at
+  now. It read the level from the first 64 KB of the transcript and the newest page, so a level
+  changed in between (`/thinking`, or a model switch) was never seen: a session started at
+  `high` and switched to `medium` still showed `high`. A model or thinking-level change between
+  them now counts, in order, without reading more of the file.
+
 ## [0.3.40] - 2026-10-01
 
 ### Fixed

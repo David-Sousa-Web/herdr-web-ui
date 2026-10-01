@@ -135,6 +135,7 @@ Every agent herdr runs shows up with its live status, terminal and alerts. The c
 | **omp** | Native session file | ✓ |
 | **omo** | Native session file, found through the pane's process tree | — use Terminal |
 | **gjc** | Native session file, from the session directory gjc keeps open | — use Terminal |
+| **pi** | Native session file, resolved through herdr; after `/tree`, the branch in play | ✓ its dialogs: a question, a confirmation, an answer typed in |
 | **Anything else** | The terminal's text | — use Terminal |
 
 When the last visible line is a familiar password, SSH passphrase or PIN request, both
@@ -145,13 +146,17 @@ draft storage or chat history. A changed prompt or busy pane refuses the send; c
 the terminal before entering it again. **Cancel** sends Ctrl+C. Remote PCs need bridge
 bundle v6. Detection covers a narrow list of English prompts, not every program or language.
 
-The model and reasoning effort come from what the session recorded, never from answer text. A todo list shows where the agent recorded it, in the turn's work block: Claude Code's `TodoWrite`, Codex's `update_plan`, or omp, omo and gjc todo calls. Plain-text plans and Claude Code `TaskCreate` / `TaskUpdate` calls are not currently reconstructed. Details and verification are in the [chat-mode audit](chat-mode-audit.md).
+A ring by the message box shows how much of the model's context the last request filled, and
+its exact token counts on a tap. A pi pane shows it once `~/.pi/agent/models.json` states that
+model's window, which is the file pi reads its own providers from; a model it states no window
+for shows no ring rather than a guessed one, because pi answers those from a catalogue or a
+running llama.cpp server that this app cannot ask. The model and reasoning effort come from what the session recorded, never from answer text. A todo list shows where the agent recorded it, in the turn's work block: Claude Code's `TodoWrite`, Codex's `update_plan`, or omp, omo and gjc todo calls. Plain-text plans and Claude Code `TaskCreate` / `TaskUpdate` calls are not currently reconstructed. Details and verification are in the [chat-mode audit](chat-mode-audit.md).
 
 ## Features
 
 | | |
 | --- | --- |
-| **Read the conversation** | Prompts and Markdown answers (links, code blocks, tables). Each turn's commands, edits and progress are folded into one "Worked for …" block. Copy an answer as Markdown or plain text. |
+| **Read the conversation** | Prompts and Markdown answers (links, code blocks, tables). Each turn's commands, edits and progress are folded into one "Worked for …" block. Copy an answer as Markdown or plain text. In a pi pane, a picture the agent's own tool opened shows inside that tool's row. |
 | **Follow the plan** | A supported todo-tool call folds into the turn's work block like any tool: it reads as the done count or the step it took, and opened, as the whole list by phase. |
 | **Drop into the real terminal** | xterm.js on the live pane: full-screen TUIs, raw keys and herdr's scrollback, shared with your own herdr TUI. Drag to select and it is copied on release; the wheel or the screen's edge scrolls further back while you drag. Ctrl+C copies a selection instead of interrupting. |
 | **Answer prompts** | Approval, question and plan menus become cards. Tap an option, or type its number in the composer. The server checks that the menu is still current before answering. |
@@ -427,7 +432,7 @@ The chat needs the agent's own session file. Check that the agent runs in a herd
 
 All three are in the herdr plugin marketplace too, and each does something this app does not. [collie](https://github.com/AltanS/collie) is a mobile terminal for herdr, tmux and zellij, with a status dashboard, a key pad, quick replies and voice input, served over Tailscale by its own bridge. [roamgate](https://github.com/powerfooI/roamgate) is a browser client for herdr with a file explorer and diff annotations, installed by its own script. [herdr-remote](https://github.com/dcolinmorgan/herdr-remote) is a macOS menu-bar app with a phone dashboard and a Telegram bot behind a relay and a free tunnel.
 
-herdr web ui reads the agent's own transcript, so Claude Code, Codex, omp, omo and gjc panes are a chat with the work folded per turn, and a prompt card is checked against the live menu before its answer is typed. The terminal is the same live pane as your TUI, other PCs join over SSH from the sidebar, and it installs and updates as a herdr plugin, with no server or account of its own. It brings no tunnel: you reach it over Tailscale, SSH or your own HTTPS proxy. If you want tmux or zellij, diffs, Telegram or a tunnel out of the box, one of the others is the better fit.
+herdr web ui reads the agent's own transcript, so Claude Code, Codex, omp, omo, gjc and pi panes are a chat with the work folded per turn, and a prompt card is checked against the live menu before its answer is typed. The terminal is the same live pane as your TUI, other PCs join over SSH from the sidebar, and it installs and updates as a herdr plugin, with no server or account of its own. It brings no tunnel: you reach it over Tailscale, SSH or your own HTTPS proxy. If you want tmux or zellij, diffs, Telegram or a tunnel out of the box, one of the others is the better fit.
 </details>
 
 <details>

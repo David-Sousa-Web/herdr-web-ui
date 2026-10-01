@@ -56,6 +56,8 @@ export interface PaneTerminalProps {
   autoSelected?: boolean;
   /** xterm font size (settings) */
   terminalFontSize: number;
+  /** mouse reports sent per wheel event (settings): 1 is xterm's own one report */
+  terminalWheelSpeed: number;
   /** the resolved UI theme: the xterm theme object mirrors it */
   theme: ResolvedTheme;
   /** the chrome palette (settings.ts): the terminal cursor and selection follow it */
@@ -99,6 +101,7 @@ export function PaneTerminal({
   view,
   autoSelected = false,
   terminalFontSize,
+  terminalWheelSpeed,
   theme,
   palette,
   role = "interact",
@@ -112,6 +115,9 @@ export function PaneTerminal({
   const chatView = view === "chat";
   const chatViewRef = useRef(chatView);
   chatViewRef.current = chatView;
+  /** read by the wheel handler, which is attached once for the terminal's life */
+  const wheelSpeedRef = useRef(terminalWheelSpeed);
+  wheelSpeedRef.current = terminalWheelSpeed;
   const hostRef = useRef<HTMLDivElement | null>(null);
   const termRef = useRef<Terminal | null>(null);
   const fitRef = useRef<FitAddon | null>(null);
@@ -279,6 +285,11 @@ export function PaneTerminal({
     // a wheel into arrow keys, which walk an agent's prompt history instead of scrolling.
     // A selecting drag takes the wheel itself (see below); after one, a wheel scrolls the
     // highlight's text away, so the highlight goes with it.
+    // xterm sends one mouse report per wheel event whatever its delta, so herdr scrolls
+    // the same few lines per notch: at a wheel speed above 1 a real wheel is replayed to send
+    // that many reports. The replays and the touch translation below are untrusted, so neither
+    // repeats. A replay is the same event, keys held included: xterm ignores a wheel with
+    // Shift down, and a replay without it scrolled where the wheel itself did not.
     term.attachCustomWheelEventHandler((event) => {
       if (drag) {
         dragWheel(event);
@@ -287,7 +298,18 @@ export function PaneTerminal({
       // an adopted grid sends herdr nothing: the wheel is the browser's, and pans the mount
       if (adopted()) return false;
       if (term.hasSelection()) term.clearSelection();
-      return term.modes.mouseTrackingMode !== "none";
+      const reporting = term.modes.mouseTrackingMode !== "none";
+      // a trackpad pinch arrives as a wheel with Ctrl down: it is not scrolling, and goes once as before
+      if (reporting && event.isTrusted && event.target && !event.ctrlKey) {
+        for (let sent = 1; sent < wheelSpeedRef.current; sent += 1) {
+          event.target.dispatchEvent(new WheelEvent("wheel", {
+            bubbles: true, cancelable: true, deltaX: event.deltaX, deltaY: event.deltaY, deltaMode: event.deltaMode,
+            clientX: event.clientX, clientY: event.clientY,
+            ctrlKey: event.ctrlKey, altKey: event.altKey, shiftKey: event.shiftKey, metaKey: event.metaKey,
+          }));
+        }
+      }
+      return reporting;
     });
     termRef.current = term;
     fitRef.current = fit;

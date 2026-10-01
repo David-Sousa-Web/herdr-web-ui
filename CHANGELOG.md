@@ -7,6 +7,12 @@ between releases do not reach them. Remote-PC runtime bundles are versioned sepa
 
 ## [Unreleased]
 
+### Changed
+- Settings → Appearance no longer offers Clawd and the Codex app icon in place of the
+  provider logos. Claude and Codex panes show their provider logos again, also where one of
+  the icons was chosen in 0.3.36. The color palettes stay
+  ([#219](https://github.com/devswha/herdr-web-ui/pull/219)).
+
 ## [0.3.36] - 2026-10-01
 
 ### Added

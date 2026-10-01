@@ -25,6 +25,10 @@ between releases do not reach them. Remote-PC runtime bundles are versioned sepa
   that expired hours ago. The app took the keychain item whenever it could read it; it now
   takes whichever of the two expires later, the way it already does for Cursor. Both are still
   only read.
+- Claude's subscription usage no longer shows a locked keychain on a Mac whose server was
+  started outside the desktop session (over SSH, or by a detached multiplexer), where
+  `security` cannot open the login keychain. The item is read through a one-shot launchd job
+  in the desktop session instead.
 
 ## [0.3.40] - 2026-10-01
 

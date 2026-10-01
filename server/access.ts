@@ -10,6 +10,11 @@
  * let in as it always was, except through a proxy
  * on a PC whose Tailscale login is known: there, a request with no login header is a tagged
  * node (tailscale serve states no person for it), and a tailnet can hold many of those.
+ *
+ * A proxy on this PC connects from loopback like a local client does, so it is known only by
+ * what it sends: a forwarding header, or a Host that is not a name for this machine. A proxy
+ * that sends neither (nginx's bare `proxy_pass` rewrites Host to the upstream address and adds
+ * nothing) cannot be told from a local client: only a token closes that setup.
  */
 import type { AccessRefusal, AccessVia, DeviceRole } from "../shared/protocol.ts";
 import type { DeviceMatch } from "./devices.ts";
@@ -17,7 +22,7 @@ import type { DeviceMatch } from "./devices.ts";
 export interface AccessInput {
   /** the connection came from this machine: 127/8, ::1 or their IPv4-mapped forms */
   loopback: boolean;
-  /** a proxy in front added X-Forwarded-For (tailscale serve does, so does any reverse proxy) */
+  /** a proxy in front shows in the request (`cameThroughProxy`): tailscale serve and most reverse proxies do */
   forwarded: boolean;
   /** Tailscale-Funnel-Request: the request came from the public internet through Funnel */
   funnel: boolean;
@@ -40,6 +45,34 @@ export type Access =
 
 export function isLoopbackAddress(address: string): boolean {
   return address === "::1" || address.startsWith("127.") || address.startsWith("::ffff:127.");
+}
+
+/** Headers a proxy adds and a browser or CLI on this PC has no reason to send. */
+const PROXY_HEADERS = ["x-forwarded-for", "x-forwarded-host", "x-forwarded-proto", "x-real-ip", "forwarded", "via"];
+
+/**
+ * Is this Host header a name for this machine itself? It is read as a bare authority, a name
+ * or a bracketed address with an optional port, and nothing else: handed to a URL parser,
+ * `public.example@localhost` and `localhost/x@public.example` both came out as localhost.
+ */
+export function isLoopbackHost(host: string): boolean {
+  const authority = /^(\[[0-9a-f:.]+\]|[a-z0-9.-]+)(?::\d{1,5})?$/i.exec(host);
+  if (!authority) return false;
+  // one trailing dot is the DNS root, the same name
+  const name = authority[1]!.toLowerCase().replace(/\.$/, "");
+  return name === "localhost" || name.endsWith(".localhost") || name === "[::1]"
+    || /^127(?:\.\d{1,3}){3}$/.test(name) || /^\[::ffff:127(?:\.\d{1,3}){3}\]$/.test(name);
+}
+
+/**
+ * Evidence that a request reached this server through a proxy. Claiming it only ever costs the
+ * sender the trust a local connection has, so a forged header gains nothing.
+ */
+export function cameThroughProxy(headers: Headers): boolean {
+  if (PROXY_HEADERS.some((name) => headers.has(name))) return true;
+  // no Host at all is not how a browser or a CLI on this PC asks (HTTP/1.0 through a proxy is)
+  const host = headers.get("host");
+  return host === null || !isLoopbackHost(host);
 }
 
 export function decideAccess(input: AccessInput): Access {

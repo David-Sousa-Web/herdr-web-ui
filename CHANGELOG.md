@@ -8,6 +8,10 @@ between releases do not reach them. Remote-PC runtime bundles are versioned sepa
 ## [Unreleased]
 
 ### Added
+- An OmO pane shows how many background tasks it still has running, as a small count beside its
+  state in the sidebar. A turn can be DONE while tasks it started still work, and they wake the
+  session by themselves; the count tells that pane from one with nothing left to do.
+  ([#287](https://github.com/devswha/herdr-web-ui/pull/287))
 - Settings → Appearance has a wheel scroll speed for the terminal, from 1× (as it was) to 10×.
   xterm sends herdr at most one wheel report per wheel event however far the wheel turned, so a
   long history took a lot of turning; at 3× the same turn scrolls three times as far. A trackpad
@@ -101,6 +105,13 @@ between releases do not reach them. Remote-PC runtime bundles are versioned sepa
   process number no longer inherits the old session, and a process list that could not be read
   keeps the chat as it was instead of dropping it.
   ([#285](https://github.com/devswha/herdr-web-ui/pull/285))
+- An OmO pane reads RUN while OmO works and DONE when it finishes. herdr reports nothing for such
+  a pane (it read READY or DONE whatever OmO did), so a message sent meanwhile was not held, Stop
+  was not offered, and no done alert came, in the browser or by web push. The status is now read
+  from OmO's own session file, also for a turn a finished background task, a monitor or a goal
+  starts by itself. Nothing of OmO's or Claude's is installed or changed for it. A remote PC gets
+  this with the next remote bundle.
+  ([#287](https://github.com/devswha/herdr-web-ui/pull/287))
 - On a PC whose Tailscale node is tagged, your own devices are no longer refused as "another
   Tailscale user". A tagged node has no person's login, and the server took the node's own name
   for one, which no device could match. Such a PC now asks every device to pair, yours included,

@@ -4,7 +4,7 @@ import { homedir } from "node:os";
 import { join, resolve, isAbsolute } from "node:path";
 import type { ServerWebSocket } from "bun";
 
-import type { AgentKind, ClientMessage, ClientRole, HealthAuth, HerdrPane, ServerFeature, ServerMessage } from "../shared/protocol.ts";
+import type { AgentKind, AgentStatus, ClientMessage, ClientRole, HealthAuth, HerdrPane, ServerFeature, ServerMessage, SessionSnapshot } from "../shared/protocol.ts";
 import { paneTitle } from "../shared/notify-policy.ts";
 import { DEFAULT_PORT } from "../shared/protocol.ts";
 import { DEVICE_COOKIE, handleAuthRequest, isAuthenticated, parseCookies, requiresAuth, unauthorizedJson } from "./auth.ts";
@@ -16,7 +16,9 @@ import { paneFiles } from "./files.ts";
 import { badRequest, errorResponse, isCount, isJsonObject, jsonResponse } from "./http.ts";
 import { serveStatic } from "./static.ts";
 import { startStatusCollector } from "./collector.ts";
-import { conversationImage, ConversationUnavailable, HistoryChanged, labelOmoPanes, paneConversation, paneRunsOmo, toolOutput } from "./conversation.ts";
+import { conversationImage, ConversationUnavailable, HistoryChanged, paneConversation, paneRunsOmo, toolOutput } from "./conversation.ts";
+import { omoPanes } from "./omo.ts";
+import { OMO_ALIASES, OmoStatus } from "./omo-status.ts";
 import { CompletionTracker } from "./completion.ts";
 import { SHELL_AGENTS, isShellAgentKind, shellAgentExecutable, startShellAgent } from "./shell-agent.ts";
 import { listDirectories } from "./directories.ts";
@@ -405,7 +407,27 @@ export function createServer(
 
   /** `done` for agents herdr loses track of (server/completion.ts), kept across restarts */
   const completions = new CompletionTracker(join(options.stateDir ?? defaultStateDir(), "completions.json"));
-  const machines = options.machines === false ? null : new MachineManager(options.stateDir ?? defaultStateDir(), push, completions);
+  /** OmO panes get their status from OmO's session files: herdr reports none for them (server/omo-status.ts) */
+  const omo = new OmoStatus({
+    discover: (panes) => omoPanes(panes),
+    snapshot: sessionSnapshot,
+    onChange: (paneId, derived, background, turn) => omoChanged(paneId, derived, background, turn),
+    // herdr called it `claude` or `pi` until now: what it finished under that name is its own
+    onFound: (paneId) => completions.adopt(paneId, "omo", OMO_ALIASES),
+  });
+  /** herdr's snapshot with OmO's own status in it: what the completion tracker and web push are given */
+  const rawSnapshot = async (): Promise<SessionSnapshot> => {
+    const snapshot = await sessionSnapshot();
+    await omo.refresh(snapshot.panes);
+    return omo.apply(snapshot);
+  };
+  /** the snapshot clients get: finishes settled, OmO panes named, their running background tasks counted */
+  const clientSnapshot = async (): Promise<SessionSnapshot> => {
+    const snapshot = await completions.readSnapshot(rawSnapshot);
+    if (!snapshot.panes.some((pane) => omo.backgroundOf(pane.pane_id) > 0)) return snapshot;
+    return { ...snapshot, panes: snapshot.panes.map((pane) => omo.backgroundOf(pane.pane_id) > 0 ? { ...pane, background_tasks: omo.backgroundOf(pane.pane_id) } : pane) };
+  };
+  const machines = options.machines === false ? null : new MachineManager(options.stateDir ?? defaultStateDir(), push, completions, clientSnapshot);
   const bridgeToken = randomBytes(32).toString("hex");
 
   function broadcast(paneId: string, message: ServerMessage): void {
@@ -719,10 +741,22 @@ export function createServer(
   };
 
   /** Status of EVERY pane, attached or not: one collector feeds all connected clients and web push. */
+  function omoChanged(paneId: string, derived: AgentStatus, background: number, turn: boolean): void {
+    // a background task starting or ending is no turn: the status stands, and nothing is alerted
+    const status = turn ? completions.observe(paneId, derived, "omo") : completions.current(paneId) ?? completions.observe(paneId, derived, "omo");
+    broadcastAll({ type: "pane-status", pane_id: paneId, agent_status: status, background_tasks: background });
+    if (turn) push.onStatus(paneId, status).catch(logPushError);
+  }
+
   const collector = startStatusCollector({
     onStatus: (paneId, raw, agent) => {
-      // an agent herdr lost on the way still works and finishes as such (server/completion.ts)
-      const status = completions.observe(paneId, raw, agent);
+      // another agent took an OmO pane: what OmO worked on there is not that agent's to finish
+      if (omo.named(paneId, agent)) completions.forget(paneId);
+      // herdr says `claude/idle` for an OmO pane whatever it does: its own status stands
+      if (omo.tracks(paneId)) return;
+      // an agent herdr lost on the way still works and finishes as such (server/completion.ts);
+      // an OmO pane whose session is not known keeps herdr's status, under its own name
+      const status = completions.observe(paneId, raw, omo.runs(paneId) ? "omo" : agent);
       broadcastAll({ type: "pane-status", pane_id: paneId, agent_status: status });
       push.onStatus(paneId, status).catch(logPushError);
     },
@@ -740,7 +774,8 @@ export function createServer(
       push.onEnded(paneId).catch(logPushError);
     },
     onStructureChange: () => broadcastAll({ type: "session-changed" }),
-  });
+  }, { snapshot: rawSnapshot });
+  omo.start();
 
   const envPort = process.env["PORT"];
   const server = Bun.serve<SocketData>({
@@ -882,7 +917,7 @@ export function createServer(
 
       if (pathname === "/api/session") {
         try {
-          return jsonResponse({ snapshot: await completions.readSnapshot(sessionSnapshot, labelOmoPanes) });
+          return jsonResponse({ snapshot: await clientSnapshot() });
         } catch (error) {
           return errorResponse(error);
         }
@@ -1294,7 +1329,7 @@ export function createServer(
         if (client.data.relay) { client.data.relay.bind(client as ServerWebSocket<unknown>); return; }
         clients.add(client);
         try {
-          send(client, { type: "snapshot", snapshot: await completions.readSnapshot(sessionSnapshot, labelOmoPanes), features: SERVER_FEATURES });
+          send(client, { type: "snapshot", snapshot: await clientSnapshot(), features: SERVER_FEATURES });
         } catch (error) {
           const code = error instanceof HerdrError ? error.code : "snapshot_failed";
           send(client, { type: "error", code, message: error instanceof Error ? error.message : String(error) });
@@ -1595,6 +1630,7 @@ export function createServer(
     stop: () => {
       clearInterval(outputTimer);
       collector.stop();
+      omo.stop();
       machines?.stop();
       registration?.close();
       for (const paneId of [...attachments.keys()]) closeAttachment(paneId);

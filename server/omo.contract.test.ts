@@ -3,6 +3,7 @@ import { mkdirSync, mkdtempSync, readdirSync, readlinkSync, realpathSync, rmSync
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { herdrRpc, sessionSnapshot, workspaceClose, workspaceCreate } from "./herdr/client.ts";
+import { labelOmoPanes } from "./conversation.ts";
 import { isOmoProcess, omoTranscriptForPane } from "./omo.ts";
 import { startShellAgent } from "./shell-agent.ts";
 import { processStartedAt } from "./process-start.ts";
@@ -36,6 +37,40 @@ const session = (id: string, timestamp = new Date().toISOString()) => {
   writeFileSync(path, JSON.stringify({ type: "session", id, cwd: root, timestamp }) + "\n");
   return path;
 };
+
+it("labels a running omo pane when herdr supplies no agent kind", async () => {
+  const paneId = await pane();
+  const snapshot = await sessionSnapshot();
+  try {
+    expect(snapshot.panes.find((entry) => entry.pane_id === paneId)?.agent).toBeUndefined();
+
+    const labelled = await labelOmoPanes(snapshot);
+
+    expect(labelled.panes.find((entry) => entry.pane_id === paneId)?.agent).toBe("omo");
+    expect(snapshot.panes.find((entry) => entry.pane_id === paneId)?.agent).toBeUndefined();
+  } finally {
+    const workspaceId = workspaces.pop();
+    if (workspaceId) await workspaceClose(workspaceId);
+  }
+});
+
+it("leaves a shell labelled OmO DAG without an agent kind", async () => {
+  const created = await workspaceCreate({ cwd: root, label: "herdr-web-ui-test-omo-shell" });
+  workspaces.push(created.workspace.workspace_id);
+  const paneId = created.root_pane.pane_id;
+  const snapshot = await sessionSnapshot();
+  const titled = { ...snapshot, panes: snapshot.panes.map((entry) =>
+    entry.pane_id === paneId ? { ...entry, terminal_title: "OmO DAG" } : entry) };
+
+  try {
+    const labelled = await labelOmoPanes(titled);
+
+    expect(labelled.panes.find((entry) => entry.pane_id === paneId)?.agent).toBeUndefined();
+  } finally {
+    workspaces.pop();
+    await workspaceClose(created.workspace.workspace_id);
+  }
+});
 
 it("uses live process evidence and stops cwd inference as soon as a second omo shares it", async () => {
   const first = await pane();

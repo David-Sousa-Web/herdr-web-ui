@@ -17,6 +17,10 @@ between releases do not reach them. Remote-PC runtime bundles are versioned sepa
   has no gjc kind, so like omo it is typed into the new pane's shell and the pane counts as
   started once gjc is its foreground process
   ([#220](https://github.com/devswha/herdr-web-ui/pull/220)).
+- OmO panes show their agent mark in the sidebar even when herdr reports no agent kind,
+  including panes started with OmO in the new-session dialog. Detection uses the pane's
+  foreground processes, not its title, so ordinary shells remain shells
+  ([#224](https://github.com/devswha/herdr-web-ui/pull/224) by @beomq).
 
 ## [0.3.37] - 2026-10-01
 

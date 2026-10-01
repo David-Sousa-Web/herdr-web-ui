@@ -13,6 +13,11 @@ between releases do not reach them. Remote-PC runtime bundles are versioned sepa
   for one, which no device could match. Such a PC now asks every device to pair, yours included,
   and `HERDR_WEB_TAILSCALE_OWNER` names the login that gets in without pairing.
   ([#280](https://github.com/devswha/herdr-web-ui/pull/280))
+- Several lines sent to an agent from the terminal's input line on a phone stay in its message
+  box until sent, on a Windows PC too. The mirrored terminal there never learns the agent's paste
+  mode, so the lines went as typed and the agent sent the first one alone. They now go as one
+  paste, as the same lines pasted into that terminal do since 0.3.40.
+  ([#281](https://github.com/devswha/herdr-web-ui/pull/281))
 - The chat of an OmO, omp or Gajae Code session shows the reasoning level the session runs at
   now. It read the level from the first 64 KB of the transcript and the newest page, so a level
   changed in between (`/thinking`, or a model switch) was never seen: a session started at

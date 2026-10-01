@@ -14,6 +14,7 @@ import { MAX_COMPOSER_CHARS, QUEUE_READY_STATUS, composerMessage, composerPayloa
 import { answerFromText, answerHint, answerRefusal, needsConfirmation, type TypedAnswer } from "../lib/promptAnswer.ts";
 import { ApiError, fetchPaneScroll, fetchPaneSelection, scrollPane } from "../lib/api.ts";
 import { parseOsc52 } from "../lib/osc52.ts";
+import { matchHerdrWidths } from "../lib/terminalWidths.ts";
 import { useMachineApi, useMachineId } from "../lib/machineContext.tsx";
 import { paneStorageId } from "../../shared/machines.ts";
 import { KeyBar } from "./KeyBar.tsx";
@@ -244,6 +245,7 @@ export function PaneTerminal({
     });
     const fit = new FitAddon();
     term.loadAddon(fit);
+    matchHerdrWidths(term);
     // an address in the terminal opens in a new tab; the page never navigates away from the pane
     term.loadAddon(new WebLinksAddon((_event, uri) => { window.open(uri, "_blank", "noopener,noreferrer"); }));
     term.open(host);

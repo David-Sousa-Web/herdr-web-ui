@@ -7,6 +7,12 @@ between releases do not reach them. Remote-PC runtime bundles are versioned sepa
 
 ## [Unreleased]
 
+### Added
+- A workspace with several panes gets a chevron in its sidebar header that folds its pane rows
+  away. The fold is remembered per PC and workspace, the header keeps its status badge, Needs you
+  still lists agents inside it, and opening one of its panes (palette, Needs you, an alert link)
+  unfolds it ([#222](https://github.com/devswha/herdr-web-ui/pull/222)).
+
 ### Fixed
 - A gjc chat no longer folds hours of work into one turn. gjc wakes its agent with a
   background job's result in the user's seat; the chat skipped that record, so the answer before

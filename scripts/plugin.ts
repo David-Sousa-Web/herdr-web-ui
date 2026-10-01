@@ -17,7 +17,7 @@
  */
 
 import { spawn } from "node:child_process";
-import { existsSync, mkdirSync, openSync, readFileSync, rmSync, writeFileSync } from "node:fs";
+import { existsSync, mkdirSync, openSync, readdirSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { homedir, platform } from "node:os";
 import { join, resolve } from "node:path";
 
@@ -185,6 +185,34 @@ async function start(): Promise<number> {
 }
 
 /**
+ * Whether a process (a pid) or process group (a negative pgid) has a member that has not exited,
+ * from /proc: a zombie, exited but not yet reaped by its parent, still answers `kill(pid, 0)`.
+ * null without /proc (macOS), where signal 0 is all there is.
+ */
+function liveProcess(target: number): boolean | null {
+  if (!existsSync("/proc/self/stat")) return null;
+  // "<pid> (<comm>) <state> <ppid> <pgrp> ...": comm may hold spaces and parens
+  const stat = (pid: string): { state: string; group: number } | null => {
+    try {
+      const fields = readFileSync(`/proc/${pid}/stat`, "utf8");
+      const [state, , group] = fields.slice(fields.lastIndexOf(")") + 2).split(" ");
+      return { state: state!, group: Number(group) };
+    } catch {
+      return null; // gone meanwhile
+    }
+  };
+  if (target > 0) {
+    const own = stat(String(target));
+    return own !== null && own.state !== "Z";
+  }
+  return readdirSync("/proc").some((pid) => {
+    if (!/^\d+$/.test(pid)) return false;
+    const member = stat(pid);
+    return member !== null && member.group === -target && member.state !== "Z";
+  });
+}
+
+/**
  * Returns once the server is gone. It stops answering at once, but its supervisor holds the
  * checkout's lock until the bridge under it exits, and a `start` before then finds that lock,
  * gives up, and leaves nothing running.
@@ -207,10 +235,11 @@ async function stop(): Promise<number> {
   const running = (): boolean => {
     try {
       process.kill(target, 0);
-      return true;
     } catch (error) {
       return (error as NodeJS.ErrnoException).code === "EPERM";
     }
+    // an exited server its parent has not reaped yet still answers signal 0
+    return liveProcess(target) ?? true;
   };
   const deadline = Date.now() + STOP_TIMEOUT_MS;
   while (running() && Date.now() < deadline) await Bun.sleep(100);

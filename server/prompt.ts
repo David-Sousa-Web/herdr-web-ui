@@ -771,20 +771,28 @@ export function answerKeys(prompt: InteractivePrompt, answer: Pick<PromptAnswer,
  * menu a new agent version draws differently, an agent without a reader): the chat must never
  * leave the user without a way to answer. It guesses as little as it can. Only a numbered menu
  * that still owns the screen's end becomes options, each answered by typing its number, so no
- * cursor position is guessed. Anything else shows the screen's last lines with the keys its
- * hint lines name, plus Enter and Esc.
+ * cursor position is guessed, plus Enter and Esc. Anything else shows the screen's last lines
+ * with the keys its hint lines name, plus Enter and Esc.
  */
 /** a question, allowing a trailing choice hint such as "(y/n)" */
 const ASKED_RE = /\?\s*(?:[([][^)\]]*[)\]])?\s*$/;
 /** a (y/n) hint ending its line, as a prompt does; a mention mid-sentence or quoted does not */
 const YES_NO_RE = /[([]\s*y(?:es)?\s*\/\s*n(?:o)?\s*[)\]]\s*[:?]?\s*$/i;
 const ARROWS_RE = /[↑↓]|\barrow keys\b/i;
-/** what a menu's hint lines say to do with it */
-const MENU_HINT_RE = /\b(?:enter|select|choose|pick|number|esc)\b/i;
+/**
+ * what a menu's hint line says to do with it: a way to choose ("Enter to select", "↵ choose",
+ * "Enter a number", "Type 1-3", "↑/↓ to move"). A plain Enter or Press asks for something else
+ * ("Enter recovery code", "Enter your phone number", "Press any key").
+ */
+const MENU_HINT_RE = /\b(?:select|choose|pick|confirm|navigate|move|esc|cancel)\b|[↑↓↵⏎]|\b(?:enter|type)\s+(?:(?:a|an|the)\s+)?number\b|\b\d\s*[-–]\s*\d\b/i;
+/** an input field waiting at a line's end ("Password:", "Choice: 2") */
+const INPUT_FIELD_RE = /:\s*\S{0,3}$/;
+/** a line that reads as a hint of its own, not a label's wrapped words ("…the selected number", "choose one") */
+const HINT_LINE_RE = /^(?:[↵⏎]|(?:Press|Enter|Select|Choose|Pick|Type|Esc|ESC)\b)/;
+/** how many lines the last row of a menu wraps onto, at most: more reads as output under it */
+const MENU_WRAP_LINES = 2;
 /** a line that is an input box or quoted output rather than a prompt's own text */
 const NOT_PROMPT_TEXT_RE = /^(?:[❯›>"'“]|\$ )/;
-/** what may follow a menu that still takes the answer: its hint lines, never a new prompt */
-const MENU_TAIL_LINES = 3;
 
 export function parseFallbackPrompt(agent: string, screen: string): InteractivePrompt {
   const lines = screen.replace(ANSI_RE, "").split(/\r?\n/);
@@ -793,17 +801,24 @@ export function parseFallbackPrompt(agent: string, screen: string): InteractiveP
   if (menu) {
     const above = shown.filter((index) => index < menu.start).map((index) => cleanLine(lines[index]!));
     const question = [...above].reverse().find((line) => ASKED_RE.test(line)) ?? above.at(-1);
+    // a row's number is typed alone, as a menu reading keys takes it; a program reading a whole
+    // line ("Enter a number >") still waits for the Enter after it, and Esc backs out
+    const choices: { label: string; steps: AnswerStep[] }[] = [
+      ...menu.rows.map((row) => ({ label: row.label, steps: [{ text: String(row.number) }] })),
+      { label: "Enter", steps: keySteps([KEY.enter]) },
+      { label: "Esc", steps: keySteps([KEY.escape]) },
+    ];
     return screenCard(lines, shown, finishPrompt(agent, {
       // the body is every other line above the rows, so a changed command above a same-looking
       // menu is another card; the display cap applies after the hash
       kind: "menu", fallback: true, title: "Waiting for your answer", question: question ?? "The agent is waiting for your answer.",
       body: withoutLine(above, question),
-      options: menu.rows.map((row) => ({ label: row.label, description: null })),
+      options: choices.map(({ label }) => ({ label, description: null })),
       multi_select: false, custom_option_index: null,
     }, {
-      responder: "fallback-menu", menuLabels: menu.rows.map((row) => row.label), selectedIndex: 0,
+      responder: "fallback-menu", menuLabels: choices.map(({ label }) => label), selectedIndex: 0,
       checkedOptionIndices: [], customMenuIndex: null, rejectWithEscapeIndex: null,
-      optionSteps: menu.rows.map((row) => [{ text: String(row.number) }]),
+      optionSteps: choices.map(({ steps }) => steps),
     }));
   }
   const last = shown.slice(-16).map((index) => cleanLine(lines[index]!));
@@ -849,31 +864,39 @@ function withoutLine(lines: string[], question: string | undefined): string | nu
 }
 
 /**
- * A numbered menu (`1.` … `n.`, 2 to 9 rows, at most one marked) whose last row is followed only
- * by a few hint lines: nothing that reads as a new prompt, an input box or another numbered row.
- * A wrapped label is no guess here, since every row starts with its own number.
+ * A numbered menu (`1.` … `n.`, 2 to 9 rows, at most one marked) that still owns the screen's
+ * end: its hint, a line that says to choose, is the screen's last, and between the last row and
+ * it are only the lines that row wraps onto (right under it, indented past its number). Anything
+ * else there (another hint, a new prompt, an input box) may be what takes the keys now, so it is
+ * no menu. A wrapped label is no guess here, since every row starts with its own number.
  */
 function fallbackMenu(lines: string[], shown: number[]): { start: number; rows: NumberedRow[] } | null {
   const lastRow = [...shown].reverse().find((index) => NUMBERED_OPTION_RE.test(cleanLine(lines[index]!)));
-  if (lastRow === undefined) return null;
-  const after = shown.filter((index) => index > lastRow).map((index) => cleanLine(lines[index]!));
-  if (after.length > MENU_TAIL_LINES || after.some((line) => SELECTED_RE.test(line) || NUMBERED_OPTION_RE.test(line))) return null;
-  // a hint that says to choose, and no input field after it ("Password:", "Choice: 2"): a
-  // numbered list in the agent's output is not a menu
-  if (!after.some((line) => MENU_HINT_RE.test(line)) || /:\s*\S{0,3}$/.test(after.at(-1)!)) return null;
+  const hintIndex = shown.at(-1);
+  if (lastRow === undefined || hintIndex === undefined || hintIndex === lastRow) return null;
+  const hint = cleanLine(lines[hintIndex]!);
+  // a hint that says to choose, and no input field ("Password:", "Choice: 2"): a numbered
+  // list in the agent's output is not a menu
+  if (!MENU_HINT_RE.test(hint) || SELECTED_RE.test(hint) || NOT_PROMPT_TEXT_RE.test(hint) || INPUT_FIELD_RE.test(hint)) return null;
+  let end = lastRow + 1;
+  const numberAt = lines[lastRow]!.search(/\d/);
+  while (end < hintIndex && cleanLine(lines[end]!) && !isDivider(lines[end]!) && lines[end]!.search(/\S/) > numberAt) end += 1;
+  if (shown.some((index) => index >= end && index < hintIndex) || end - lastRow - 1 > MENU_WRAP_LINES) return null;
   // up from the last row, through rows and the lines they wrap onto, to a blank line or a rule
   let start = lastRow;
   while (start > 0 && cleanLine(lines[start - 1]!) && !isDivider(lines[start - 1]!)) start -= 1;
   while (start < lastRow && !NUMBERED_OPTION_RE.test(cleanLine(lines[start]!))) start += 1;
-  const rows = parseNumberedRows(lines, start, lastRow + 1);
+  const rows = parseNumberedRows(lines, start, end);
   if (!sequentialRows(rows) || rows.length < 2 || rows.length > 9 || rows.filter((row) => row.selected).length > 1) return null;
   // the lines a row wraps onto belong to its label; an input box or quote between rows, or a
   // row with its own letter key ("Read only (r)"), means the number may not be the key
   for (const [at, row] of rows.entries()) {
-    const wrapped = lines.slice(row.lineIndex + 1, rows[at + 1]?.lineIndex ?? lastRow + 1).map(cleanLine).filter(Boolean);
-    if (wrapped.some((line) => NOT_PROMPT_TEXT_RE.test(line))) return null;
+    const wrapped = lines.slice(row.lineIndex + 1, rows[at + 1]?.lineIndex ?? end).map(cleanLine).filter(Boolean);
+    // a hint or an input field inside the last row's wrap may be an older prompt, with a new one under it
+    if (wrapped.some((line) => NOT_PROMPT_TEXT_RE.test(line) || (at === rows.length - 1 && (HINT_LINE_RE.test(line) || /:\s*$/.test(line))))) return null;
+    // the key may end the row's first line, with a description wrapped under it
+    if ([row.label, ...wrapped].some((line) => /\(\w\)$/.test(line))) return null;
     row.label = [row.label, ...wrapped].join(" ");
-    if (/\(\w\)$/.test(row.label)) return null;
   }
   return { start, rows };
 }
@@ -895,6 +918,9 @@ const queueFronts = new Map<string, QueueFront & { rollout: string }>();
 /** Each pane's rollout, resolved for its collapsed queue: a poll every 2s would otherwise redo it. */
 const queueRollouts = new Map<string, { path: string | null; at: number }>();
 const QUEUE_ROLLOUT_MS = 15_000;
+
+/** how long a prompt poll waits for the ANSI read behind Claude's suggestion before going without it */
+const SUGGESTION_READ_MS = 1_500;
 
 /** Claude's new-session tip in the empty input (`Try "how does <filepath> work?"`), not a suggestion. */
 const CLAUDE_TIP_RE = /^Try "/;
@@ -962,31 +988,32 @@ export function parseClaudeSuggestion(ansi: string): string | null {
   return suggestion === "" || CLAUDE_TIP_RE.test(suggestion) ? null : suggestion;
 }
 
-async function readPrompt(paneId: string, codexHome?: string): Promise<{ agent: string; prompt: InteractivePrompt | null }> {
+async function readPrompt(paneId: string, codexHome?: string): Promise<{ agent: string; status: string; prompt: InteractivePrompt | null }> {
   const { panes } = await sessionSnapshot();
   // a closed pane's wait has ended too
   for (const logged of fallbackLogged) if (!panes.some((candidate) => candidate.pane_id === logged)) fallbackLogged.delete(logged);
   const pane = panes.find((candidate) => candidate.pane_id === paneId);
   if (!pane) throw new HerdrError("pane_not_found", `pane ${paneId} not found`);
   const agent = pane.agent ?? "";
+  const status = pane.agent_status;
   const known = await readKnownPrompt(paneId, pane, agent, codexHome);
-  if (known.prompt !== null || pane.agent_status !== "blocked" || !agent) {
+  if (known.prompt !== null || status !== "blocked" || !agent) {
     fallbackLogged.delete(paneId);
-    return { agent, prompt: known.prompt };
+    return { agent, status, prompt: known.prompt };
   }
   // herdr says the agent waits on the user and no reader knows the screen: the fallback card
   const screen = known.screen ?? (await paneRead({ paneId, source: "visible", format: "text" })).text;
   // Codex's collapsed question queue reads blocked while its main prompt takes a message
   if (agent === "codex" && codexQuestionsCollapsed(screen)) {
     fallbackLogged.delete(paneId);
-    return { agent, prompt: null };
+    return { agent, status, prompt: null };
   }
   const prompt = parseFallbackPrompt(agent, screen);
   if (!fallbackLogged.has(paneId) && fallbackLogged.size < FALLBACK_LOGGED_MAX) {
     fallbackLogged.add(paneId);
     console.warn(`prompt: ${agent} pane ${paneId} is blocked on a screen no reader knows; fallback card (${prompt.options.length} options)`);
   }
-  return { agent, prompt };
+  return { agent, status, prompt };
 }
 
 async function readKnownPrompt(
@@ -1117,11 +1144,14 @@ export async function handlePromptRequest(request: Request, url: URL, options: P
       if (request.method !== "GET") return badRequest("method_not_allowed", "GET is required.");
       const paneId = url.searchParams.get("pane_id")?.trim();
       if (!paneId) return badRequest("missing_pane_id", "pane_id is required.");
-      const { agent, prompt } = await readPrompt(paneId, options.codexHome);
+      const { agent, status, prompt } = await readPrompt(paneId, options.codexHome);
       // no menu up: what Claude suggests typing next, for the composer's placeholder. Only a
-      // nicety: a failed read of it (a herdr without ansi reads) leaves the prompt answer as it is.
-      const suggestion = prompt === null && agent === "claude"
-        ? await paneRead({ paneId, source: "visible", format: "ansi" }).then((read) => parseClaudeSuggestion(read.text), () => null)
+      // nicety: it is read only while Claude waits for the next prompt (a working agent shows
+      // none), and a failed or slow read of it (a herdr without ansi reads, a busy one) leaves
+      // the prompt answer as it is, on time.
+      const suggestion = prompt === null && agent === "claude" && (status === "idle" || status === "done")
+        ? await paneRead({ paneId, source: "visible", format: "ansi", timeoutMs: SUGGESTION_READ_MS })
+          .then((read) => parseClaudeSuggestion(read.text), () => null)
         : null;
       return jsonResponse({ prompt, suggestion });
     }

@@ -206,15 +206,17 @@ export interface PaneReadOptions {
   format?: ReadFormat;
   lines?: number;
   stripAnsi?: boolean;
+  /** how long the answer is waited for; herdrRpc's default otherwise */
+  timeoutMs?: number;
 }
 
 export async function paneRead(options: PaneReadOptions, socketPath?: string): Promise<PaneReadResult> {
-  const { paneId, source = "visible", format = "text", lines, stripAnsi } = options;
+  const { paneId, source = "visible", format = "text", lines, stripAnsi, timeoutMs } = options;
   // Escape sequences must survive for xterm.js, so an ansi read defaults to strip_ansi:false.
   const strip = stripAnsi ?? format !== "ansi";
   const params: Record<string, unknown> = { pane_id: paneId, source, format, strip_ansi: strip };
   if (lines !== undefined) params["lines"] = lines;
-  const result = await herdrRpc<{ read: PaneReadResult }>("pane.read", params, socketPath);
+  const result = await herdrRpc<{ read: PaneReadResult }>("pane.read", params, socketPath, timeoutMs);
   return result.read;
 }
 

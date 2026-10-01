@@ -1,7 +1,11 @@
 import { describe, expect, test } from "bun:test";
+import { mkdtempSync, rmSync } from "node:fs";
+import { createServer, type Socket } from "node:net";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
 import type { InteractivePrompt } from "../shared/protocol.ts";
 
-import { answerKeys, codexQuestionsCollapsed, codexQueuedPrompt, parseClaudeSuggestion, parseFallbackPrompt, parseInteractivePrompt } from "./prompt.ts";
+import { answerKeys, codexQuestionsCollapsed, codexQueuedPrompt, handlePromptRequest, parseClaudeSuggestion, parseFallbackPrompt, parseInteractivePrompt } from "./prompt.ts";
 
 const labels = (prompt: InteractivePrompt | null) => prompt?.options.map((option) => option.label);
 
@@ -878,15 +882,67 @@ describe("the fallback card for a blocked pane no reader knows", () => {
     expect(prompt.fallback).toBe(true);
     expect(prompt.question).toBe("Apply these 3 file changes?");
     expect(prompt.body).toBe("src/a.ts, src/b.ts, src/c.ts");
-    expect(labels(prompt)).toEqual(["Apply all", "Review each", "Discard"]);
+    expect(labels(prompt)).toEqual(["Apply all", "Review each", "Discard", "Enter", "Esc"]);
     expect(answerKeys(prompt, { option_index: 2 })).toEqual([{ text: "3" }]);
     expect(answerKeys(prompt, { option_index: 0 })).toEqual([{ text: "1" }]);
     expect(() => answerKeys(prompt, { custom_text: "no" })).toThrow();
   });
 
+  test("offers Enter and Esc after the rows, for a program that reads a whole line", () => {
+    const prompt = parseFallbackPrompt("gjc", "Pick a profile:\n1. Work\n2. Home\n\nEnter a number >\n");
+    expect(labels(prompt)).toEqual(["Work", "Home", "Enter", "Esc"]);
+    // the number goes alone; the Enter that submits it is its own tap
+    expect(answerKeys(prompt, { option_index: 1 })).toEqual([{ text: "2" }]);
+    expect(answerKeys(prompt, { option_index: 2 })).toEqual([{ keys: ["enter"] }]);
+    expect(answerKeys(prompt, { option_index: 3 })).toEqual([{ keys: ["esc"] }]);
+  });
+
+  test("joins the lines the last row wraps onto into its label", () => {
+    const prompt = parseFallbackPrompt("gjc", "Trust this folder?\n\n❯ 1. No, exit\n  2. Yes, trust folder and\n     allow all commands without asking\n\n Enter to confirm\n");
+    expect(labels(prompt)).toEqual(["No, exit", "Yes, trust folder and allow all commands without asking", "Enter", "Esc"]);
+  });
+
+  test("reads no menu when the last row's wrapped label ends in its own letter key", () => {
+    const prompt = parseFallbackPrompt("gjc", "Access?\n1. Read only\n2. Full access, every file and\n   command (f)\n\nEnter to select\n");
+    expect(labels(prompt)).toEqual(["Enter", "Esc"]);
+    // or ends the row's first line, a description wrapped under it
+    expect(labels(parseFallbackPrompt("gjc", "Access?\n1. Cancel\n2. Full access (f)\n   Allows writing to every file\n\nType f, then Enter\n"))).toEqual(["Enter", "Esc"]);
+  });
+
+  test("takes the last line for a hint only when it names a way to choose", () => {
+    const menu = (hint: string) => labels(parseFallbackPrompt("gjc", `Pick one:\n1. Alpha\n2. Beta\n\n${hint}\n`));
+    // a plain Enter or Press asks for something else: a digit typed there is no answer
+    for (const hint of ["Enter recovery code", "Enter your password", "Enter your phone number", "Press any key", "Enter to continue"]) {
+      expect(menu(hint)).toEqual(["Enter", "Esc"]);
+    }
+    expect(labels(parseFallbackPrompt("gjc", "1. A\n2. B\nEnter recovery code\n"))).toEqual(["Enter", "Esc"]);
+    for (const hint of ["Enter to select", "↵ choose · esc back", "Enter to confirm · Esc to cancel", "Enter a number", "Type 1-2", "↑/↓ to move", "Tab/arrows to navigate"]) {
+      expect(menu(hint)).toEqual(["Alpha", "Beta", "Enter", "Esc"]);
+    }
+  });
+
+  test("reads no menu unless its hint is the screen's last line, with only the last row's wrap above it", () => {
+    // a new prompt under the hint takes what is typed now: a digit there is no menu answer
+    expect(labels(parseFallbackPrompt("gjc", "Pick:\n1. Read only\n2. Full access\nEnter to select\nEnter recovery code ABCD\n"))).toEqual(["Enter", "Esc"]);
+    expect(labels(parseFallbackPrompt("gjc", "Pick:\n1. Read only\n2. Full access\n\nEnter to select\nWaiting for the token\n"))).toEqual(["Enter", "Esc"]);
+    // a line under the last row, not indented past its number, is not its wrap
+    expect(labels(parseFallbackPrompt("gjc", "Pick:\n  1. Read only\n  2. Full access\n  Saved.\nEnter to select\n"))).toEqual(["Enter", "Esc"]);
+    // nor a hint inside the last row's wrap, with a new prompt under it
+    expect(labels(parseFallbackPrompt("gjc", "Done:\n1. Read settings\n2. Load profiles\n   Profiles loaded\n   Enter to continue\nEnter recovery code ABCD\n"))).toEqual(["Enter", "Esc"]);
+    // nor an input field there, or more output than a wrapped label
+    expect(labels(parseFallbackPrompt("gjc", "Done:\n1. Load configuration\n2. Connect to account\n   Authentication required\n   Password:\nEnter password and press Enter\n"))).toEqual(["Enter", "Esc"]);
+    expect(labels(parseFallbackPrompt("gjc", "Done:\n1. Load configuration\n2. Connect to account\n   Connected to example.com\n   Authentication required\n   Waiting\nEnter to continue\n"))).toEqual(["Enter", "Esc"]);
+    // a wrapped label's own words are no hint
+    expect(labels(parseFallbackPrompt("gjc", "Access?\n1. Cancel\n2. Allow access to the\n   selected account number only\n\nEnter to select\n"))).toEqual(["Cancel", "Allow access to the selected account number only", "Enter", "Esc"]);
+    expect(labels(parseFallbackPrompt("gjc", "Where?\n1. Here\n2. Allow the agent to\n   choose a directory\n\nEnter to select\n"))).toEqual(["Here", "Allow the agent to choose a directory", "Enter", "Esc"]);
+    expect(labels(parseFallbackPrompt("gjc", "Retry?\n1. Never\n2. Retry with a maximum\n   attempt count: 3\n\nEnter to select\n"))).toEqual(["Never", "Retry with a maximum attempt count: 3", "Enter", "Esc"]);
+    // a hint right under the last row, indented like its wrap, is still the hint
+    expect(labels(parseFallbackPrompt("gjc", "Pick a profile:\n1. Work\n2. Home\n   Enter a number >\n"))).toEqual(["Work", "Home", "Enter", "Esc"]);
+  });
+
   test("keeps a wrapped label on its own row, since each row starts with its number", () => {
     const prompt = parseFallbackPrompt("gjc", "Trust this folder?\n\n❯ 1. No, exit and keep this folder\n     untrusted\n  2. Yes, trust folder\n  3. Yes, trust and allow hooks\n\n Enter to confirm\n");
-    expect(labels(prompt)).toEqual(["No, exit and keep this folder untrusted", "Yes, trust folder", "Yes, trust and allow hooks"]);
+    expect(labels(prompt)).toEqual(["No, exit and keep this folder untrusted", "Yes, trust folder", "Yes, trust and allow hooks", "Enter", "Esc"]);
     expect(answerKeys(prompt, { option_index: 1 })).toEqual([{ text: "2" }]);
   });
 
@@ -960,4 +1016,67 @@ describe("the fallback card for a blocked pane no reader knows", () => {
     const footer = (end: string) => `Pick\n\n❯ 1. One\n  2. Two\n\n ${end}\n`;
     expect(parseFallbackPrompt("gjc", footer("Enter to select")).id).not.toBe(parseFallbackPrompt("gjc", footer("Enter to select · done")).id);
   });
+});
+
+describe("Claude's suggestion on a prompt poll", () => {
+  /** a herdr with one Claude pane whose ANSI reads never answer */
+  async function stalledAnsiHerdr(status: string, run: (reads: string[]) => Promise<void>): Promise<void> {
+    const root = mkdtempSync(join(tmpdir(), "herdr-prompt-suggestion-"));
+    const path = join(root, "herdr.sock");
+    const reads: string[] = [];
+    const sockets = new Set<Socket>();
+    const server = createServer((socket) => {
+      sockets.add(socket);
+      socket.on("close", () => sockets.delete(socket));
+      socket.on("error", () => undefined);
+      let input = "";
+      socket.on("data", (chunk) => {
+        input += chunk.toString();
+        if (!input.includes("\n")) return;
+        const request = JSON.parse(input.split("\n")[0]!) as { id: string; method: string; params: { format?: string } };
+        const answer = (result: unknown) => socket.end(`${JSON.stringify({ id: request.id, result })}\n`);
+        if (request.method === "session.snapshot") {
+          return answer({ snapshot: { panes: [{ pane_id: "p_1", agent: "claude", agent_status: status }], layouts: [] } });
+        }
+        if (request.method !== "pane.read") throw new Error(`unexpected fixture RPC: ${request.method}`);
+        reads.push(request.params.format ?? "");
+        if (request.params.format === "text") answer({ read: { text: "Done.\n\n────────\n❯ \n────────\n" } });
+      });
+    });
+    await new Promise<void>((resolve, reject) => { server.once("error", reject); server.listen(path, resolve); });
+    const previous = process.env["HERDR_SOCKET"];
+    process.env["HERDR_SOCKET"] = path;
+    try { await run(reads); } finally {
+      if (previous === undefined) delete process.env["HERDR_SOCKET"];
+      else process.env["HERDR_SOCKET"] = previous;
+      for (const socket of sockets) socket.destroy();
+      server.close();
+      rmSync(root, { recursive: true, force: true });
+    }
+  }
+
+  async function poll(): Promise<{ body: unknown; ms: number }> {
+    const url = new URL("http://127.0.0.1/api/pane/prompt?pane_id=p_1");
+    const started = Date.now();
+    const response = await handlePromptRequest(new Request(url), url);
+    return { body: await response!.json(), ms: Date.now() - started };
+  }
+
+  test("answers without it once its read is late, rather than waiting on herdr", async () => {
+    await stalledAnsiHerdr("idle", async (reads) => {
+      const { body, ms } = await poll();
+      expect(body).toEqual({ prompt: null, suggestion: null });
+      expect(reads).toEqual(["text", "ansi"]);
+      expect(ms).toBeLessThan(2_500);
+    });
+  }, 4_000);
+
+  test("is not read while Claude works", async () => {
+    await stalledAnsiHerdr("working", async (reads) => {
+      const { body, ms } = await poll();
+      expect(body).toEqual({ prompt: null, suggestion: null });
+      expect(reads).toEqual(["text"]);
+      expect(ms).toBeLessThan(1_000);
+    });
+  }, 4_000);
 });

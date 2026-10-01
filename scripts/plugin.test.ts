@@ -1,7 +1,7 @@
 import { afterEach, beforeEach, describe, expect, it } from "bun:test";
 import { spawn } from "node:child_process";
-import { chmodSync, existsSync, mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
-import { tmpdir } from "node:os";
+import { chmodSync, existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
+import { platform, tmpdir } from "node:os";
 import { join } from "node:path";
 
 /**
@@ -85,4 +85,27 @@ describe("stop", () => {
     expect(() => process.kill(-pid, 0)).toThrow();
     expect(existsSync(join(scratch, "state", "server.pid"))).toBe(false);
   });
+
+  // a server that exited while its parent (a plugin host, say) has not reaped it yet
+  it.skipIf(platform() !== "linux" || !Bun.which("setsid"))("counts an exited, unreaped server as gone", async () => {
+    // the inner shell leads its own group; its parent turns into a sleep that never reaps it
+    const parent = spawn("sh", ["-c", `setsid sh -c 'echo $$; exec sleep 0.2' & exec sleep 30`], { stdio: ["ignore", "pipe", "ignore"] });
+    try {
+      const pid = Number(await new Promise<string>((resolve) => parent.stdout!.once("data", (chunk) => resolve(String(chunk).trim()))));
+      const state = () => readFileSync(`/proc/${pid}/stat`, "utf8").split(") ")[1]!.split(" ")[0];
+      const deadline = Date.now() + 5_000;
+      while (state() !== "Z" && Date.now() < deadline) await Bun.sleep(20);
+      expect(state()).toBe("Z");
+      // what `stop` waited on: the zombie's group still answers signal 0
+      expect(() => process.kill(-pid, 0)).not.toThrow();
+      mkdirSync(join(scratch, "state"));
+      writeFileSync(join(scratch, "state", "server.pid"), `${pid}\n`);
+      const started = Date.now();
+      const stopped = await run("stop");
+      expect(stopped.exitCode, stopped.err).toBe(0);
+      expect(stopped.out).toContain(`stopped herdr web ui (pid ${pid})`);
+      expect(Date.now() - started).toBeLessThan(5_000);
+      expect(existsSync(join(scratch, "state", "server.pid"))).toBe(false);
+    } finally { parent.kill("SIGKILL"); }
+  }, 30_000);
 });

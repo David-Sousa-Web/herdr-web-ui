@@ -18,7 +18,9 @@ between releases do not reach them. Remote-PC runtime bundles are versioned sepa
   default ([#188](https://github.com/devswha/herdr-web-ui/pull/188) by @Haeminway1).
 - The chat's message box offers the prompt Claude Code suggests next, the grey text in its
   empty input. It stands as the box's placeholder, and Tab takes it into the box; on a touch
-  screen a dashed chip above the box does the same. Nothing is sent until you send it.
+  screen a dashed chip above the box does the same. Nothing is sent until you send it. It is
+  read only while Claude waits for a prompt and never holds up the chat for more than 1.5s
+  ([#198](https://github.com/devswha/herdr-web-ui/pull/198) by @Yoonwoo-Ha, [#216](https://github.com/devswha/herdr-web-ui/pull/216)).
 - Settings → Plan limits → Where puts the plan meters at the top of the sidebar instead of
   beside Settings: a row per account with its plan, the limit closest to running out, a bar
   and when it resets. A tap opens every limit. An account whose numbers are old or missing (a
@@ -34,16 +36,21 @@ between releases do not reach them. Remote-PC runtime bundles are versioned sepa
 - `stop` (herdr's Stop action, `bun scripts/plugin.ts stop`) returns once the server is gone.
   It returned at once, while the old supervisor still held the checkout's lock, so a `start`
   right after it found that lock and gave up: nothing ran, and it reported no answer after 20s.
+  On Linux, a server that has exited but whose parent has not yet collected it counts as gone
+  ([#210](https://github.com/devswha/herdr-web-ui/pull/210) by @Yoonwoo-Ha, [#216](https://github.com/devswha/herdr-web-ui/pull/216)).
 - A pane herdr reports waiting for input gets a card in the chat even when no reader knows its
-  screen (Codex's collapsed question queue keeps its own handling). A numbered menu that still
-  takes the answer is offered as its options, each answered by typing its number; anything
-  else shows the screen's last lines with Enter and Esc, plus Yes and No for a `(y/n)` prompt
+  screen (Codex's collapsed question queue keeps its own handling). A numbered menu whose hint
+  (a way to choose, such as "Enter to select") is the screen's last line is offered as its options, each answered by typing its number, with
+  wrapped labels in full and Enter and Esc after them; anything else, such as a new prompt under
+  the hint, shows the screen's last lines with Enter and Esc, plus Yes and No for a `(y/n)` prompt
   and arrows when its hint names them. An answer to a changed screen is refused. Each such
-  wait is logged once.
+  wait is logged once ([#205](https://github.com/devswha/herdr-web-ui/pull/205) by @Haeminway1, [#216](https://github.com/devswha/herdr-web-ui/pull/216)).
 - **Add PC** on a Windows host now says that Windows hosts are not supported yet, instead of
   failing with the host shell's "'sh' is not recognized" (#189).
 - A pane waiting for another web bridge no longer frees its input for a moment and reports the
-  wait twice when herdr's refusal of a retry arrives slowly (a busy PC).
+  wait twice when herdr's refusal of a retry arrives slowly (a busy PC). It keeps waiting and
+  tries again instead, however late that refusal's exit is
+  ([#207](https://github.com/devswha/herdr-web-ui/pull/207) by @Haeminway1, [#216](https://github.com/devswha/herdr-web-ui/pull/216)).
 - In the terminal, **Ctrl+Shift+↑/↓** only switches panes. It no longer also types `ESC[1;6A` /
   `ESC[1;6B` into the pane it switched to ([#215](https://github.com/devswha/herdr-web-ui/pull/215)).
 - On a wide screen, the quick replies above the message box line up with the box instead of

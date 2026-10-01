@@ -220,17 +220,26 @@ describe("an attach classified as held", () => {
     });
   }, 30_000);
 
-  it("paints a live attach whose output so far ends like herdr's refusal, once that refusal's exit is overdue", async () => {
+  it("keeps the pane held when a refusal's exit is overdue, and tries again instead of resuming", async () => {
     const paneId = await pane();
-    const herdr = scriptedHerdr([`${HELD.replace("; exit 1", "")}; sleep 10`]);
+    // herdr refuses, then refuses without its exit ever coming, refuses once more, then attaches
+    const herdr = scriptedHerdr([HELD, `${HELD.replace("; exit 1", "")}; sleep 10`, HELD, "real"]);
     await withHerdr(herdr.path, async () => {
       const client = connect(third.port, paneId);
       try {
         await client.open;
         client.send({ type: "attach", pane_id: paneId, cols: 100, rows: 30 });
-        await until(() => client.state.frames > 0, "the live attach paints", 5_000);
-        expect(client.state.tail).toContain("already has an attached client");
-        expect(client.state.errors).toEqual([]);
+        await until(() => client.state.errors.includes("attach_held"), "the first refusal holds the pane", 5_000);
+        await until(() => herdr.attempts() === 2, "the retry whose exit never comes starts", 5_000);
+        // just past that refusal's exit budget: still held, and a key does not get through
+        await Bun.sleep(2_150);
+        client.send({ type: "keys", pane_id: paneId, keys: ["Enter"] });
+        await until(() => client.state.errors.filter((code) => code === "attach_held").length === 2, "keys refused while held", 5_000);
+        // that try is retired and tried again: only the real attach resumes, and the refusal is never painted
+        await until(() => client.state.resumed === 1, "the real attach resumes", 5_000);
+        expect(herdr.attempts()).toBe(4);
+        await until(() => client.state.frames > 0, "the real attach paints", 5_000);
+        expect(client.state.tail).not.toContain("already has an attached client");
         expect(client.state.exits).toBe(0);
       } finally { client.ws.close(); }
     });

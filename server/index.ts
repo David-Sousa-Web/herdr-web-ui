@@ -488,6 +488,8 @@ export function createServer(
       let held: string | null = "";
       let heldSince = 0;
       let holdTimer: ReturnType<typeof setTimeout> | undefined;
+      /** ended before its exit came: what it still prints is no attach's */
+      let retired = false;
       const release = (): void => {
         clearTimeout(holdTimer);
         if (held === null) return;
@@ -499,11 +501,18 @@ export function createServer(
         // a closed attachment's kill skips onExit, which would clear this timer: a newer
         // attachment on the pane must not hear this one's resume
         if (attachments.get(paneId) !== attachment) return;
-        // a refusal whose exit comes late (a busy PC) is not an attach: onExit handles it, and
-        // resuming here would free the input, then report attach_held a second time. A pane
-        // whose own output only ends like one is painted once that exit is overdue.
-        if (ATTACH_REFUSING_RE.test(output) && Date.now() - heldSince < ATTACH_REFUSAL_EXIT_MS) {
-          holdTimer = setTimeout(took, ATTACH_HOLD_MS);
+        // a refusal whose exit comes late (a busy PC) is not an attach: resuming would free
+        // the input to a pane another bridge may hold. Only output after it is an attach's.
+        if (ATTACH_REFUSING_RE.test(output)) {
+          if (Date.now() - heldSince < ATTACH_REFUSAL_EXIT_MS) {
+            holdTimer = setTimeout(took, ATTACH_HOLD_MS);
+            return;
+          }
+          // its exit is overdue: this try ends here, as that exit would have ended it (a pane
+          // whose own output ends the same way waits for more output on a later try)
+          retired = true;
+          session.kill();
+          ended(null);
           return;
         }
         // the attach took: a pane that waited for another bridge is this bridge's again
@@ -513,7 +522,60 @@ export function createServer(
         }
         release();
       };
-      return new PtySession({
+      const ended = (code: number | null): void => {
+        clearTimeout(holdTimer);
+        if (attachments.get(paneId) !== attachment) return;
+        const now = Date.now();
+        if (code !== 0 && ATTACH_READ_RACE_RE.test(output) && now - (refusedSince ??= now) < retryFor) {
+          held = null;
+          retries += 1;
+          setTimeout(() => {
+            if (attachments.get(paneId) !== attachment) return;
+            try {
+              attachment.pty = start();
+            } catch (error) {
+              // a throw here is uncaught and takes the whole server down: end this
+              // pane's terminal instead, on the exited pty the record still holds
+              const message = spawnFailure(paneId, error);
+              broadcast(paneId, { type: "error", code: "command_failed", message });
+              broadcast(paneId, { type: "pty-exit", pane_id: paneId, code: null });
+              closeAttachment(paneId);
+            }
+          }, Math.min(ATTACH_RETRY_MS * 2 ** (retries - 1), ATTACH_RETRY_MAX_MS));
+          return;
+        }
+        if (code !== 0 && ATTACH_HELD_RE.test(output)) {
+          held = null; // herdr's refusal is not the pane's output: never painted, and it repeats
+          // waiting for the other bridge is not a read race: the next one gets its full budget
+          refusedSince = null;
+          retries = 0;
+          // Another web bridge holds herdr's one attach slot (two bridges on one herdr, e.g. a
+          // second install beside the first). Its attach is left alone; this pane waits for it
+          // to let go, trying again while anyone here still has it open, instead of ending.
+          if (!attachment.held) broadcast(paneId, { type: "error", code: "attach_held", message: ATTACH_HELD_MESSAGE, pane_id: paneId });
+          attachment.held = true;
+          attachment.heldRetry = setTimeout(() => {
+            if (attachments.get(paneId) !== attachment) return;
+            if (attachment.clients.size === 0) {
+              closeAttachment(paneId);
+              return;
+            }
+            try {
+              attachment.pty = start();
+            } catch (error) {
+              const message = spawnFailure(paneId, error);
+              broadcast(paneId, { type: "error", code: "command_failed", message });
+              broadcast(paneId, { type: "pty-exit", pane_id: paneId, code: null });
+              closeAttachment(paneId);
+            }
+          }, heldRetry);
+          return;
+        }
+        release();
+        broadcast(paneId, { type: "pty-exit", pane_id: paneId, code });
+        closeAttachment(paneId);
+      };
+      const session = new PtySession({
         command: process.env["HERDR_WEB_HERDR_BIN"] || "herdr",
         args: ["terminal", "attach", terminalId],
         // herdr's CLI reads HERDR_SOCKET_PATH, not HERDR_SOCKET: the stream must reach
@@ -523,7 +585,7 @@ export function createServer(
         cols: attachment.cols,
         rows: attachment.rows,
         onData: (data) => {
-          if (attachments.get(paneId) !== attachment) return;
+          if (retired || attachments.get(paneId) !== attachment) return;
           output = (output + data).slice(-1024);
           if (held === null) return forward(data);
           if (held === "") {
@@ -532,60 +594,9 @@ export function createServer(
           }
           held += data;
         },
-        onExit: (code) => {
-          clearTimeout(holdTimer);
-          if (attachments.get(paneId) !== attachment) return;
-          const now = Date.now();
-          if (code !== 0 && ATTACH_READ_RACE_RE.test(output) && now - (refusedSince ??= now) < retryFor) {
-            held = null;
-            retries += 1;
-            setTimeout(() => {
-              if (attachments.get(paneId) !== attachment) return;
-              try {
-                attachment.pty = start();
-              } catch (error) {
-                // a throw here is uncaught and takes the whole server down: end this
-                // pane's terminal instead, on the exited pty the record still holds
-                const message = spawnFailure(paneId, error);
-                broadcast(paneId, { type: "error", code: "command_failed", message });
-                broadcast(paneId, { type: "pty-exit", pane_id: paneId, code: null });
-                closeAttachment(paneId);
-              }
-            }, Math.min(ATTACH_RETRY_MS * 2 ** (retries - 1), ATTACH_RETRY_MAX_MS));
-            return;
-          }
-          if (code !== 0 && ATTACH_HELD_RE.test(output)) {
-            held = null; // herdr's refusal is not the pane's output: never painted, and it repeats
-            // waiting for the other bridge is not a read race: the next one gets its full budget
-            refusedSince = null;
-            retries = 0;
-            // Another web bridge holds herdr's one attach slot (two bridges on one herdr, e.g. a
-            // second install beside the first). Its attach is left alone; this pane waits for it
-            // to let go, trying again while anyone here still has it open, instead of ending.
-            if (!attachment.held) broadcast(paneId, { type: "error", code: "attach_held", message: ATTACH_HELD_MESSAGE, pane_id: paneId });
-            attachment.held = true;
-            attachment.heldRetry = setTimeout(() => {
-              if (attachments.get(paneId) !== attachment) return;
-              if (attachment.clients.size === 0) {
-                closeAttachment(paneId);
-                return;
-              }
-              try {
-                attachment.pty = start();
-              } catch (error) {
-                const message = spawnFailure(paneId, error);
-                broadcast(paneId, { type: "error", code: "command_failed", message });
-                broadcast(paneId, { type: "pty-exit", pane_id: paneId, code: null });
-                closeAttachment(paneId);
-              }
-            }, heldRetry);
-            return;
-          }
-          release();
-          broadcast(paneId, { type: "pty-exit", pane_id: paneId, code });
-          closeAttachment(paneId);
-        },
+        onExit: ended,
       });
+      return session;
     };
     try {
       attachment.pty = start();

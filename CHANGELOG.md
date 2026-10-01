@@ -19,6 +19,12 @@ between releases do not reach them. Remote-PC runtime bundles are versioned sepa
   …/omo-ai/plugin`, and 0.3.40 no longer took it for OmO: the chat found no conversation and
   New session did not see OmO start. That engine counts as OmO again when omo-ai's plugin is one
   of its extensions.
+- Claude usage on a Mac no longer shows `expired` while Claude Code is signed in. Claude Code
+  started outside the desktop session (over SSH, or by a background service) cannot write its
+  keychain item, so it refreshes only `~/.claude/.credentials.json` and the item keeps a token
+  that expired hours ago. The app took the keychain item whenever it could read it; it now
+  takes whichever of the two expires later, the way it already does for Cursor. Both are still
+  only read.
 
 ## [0.3.40] - 2026-10-01
 

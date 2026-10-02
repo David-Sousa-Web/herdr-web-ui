@@ -15,6 +15,11 @@ between releases do not reach them. Remote-PC runtime bundles are versioned sepa
   remembered pane views on this device. Shell panes still open in Terminal.
   ([#325](https://github.com/devswha/herdr-web-ui/pull/325) by @Haeminway1)
 
+### Changed
+- In the sidebar's By workspace view, a workspace with one pane keeps its numbered header and
+  can be folded, renamed and reordered from that header, just like a workspace with several panes.
+  ([#332](https://github.com/devswha/herdr-web-ui/pull/332) by @beomq)
+
 ## [0.3.43] - 2026-10-02
 
 ### Changed

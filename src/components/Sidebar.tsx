@@ -11,6 +11,7 @@ import { useInstallPrompt } from "../lib/install.ts";
 import { knownStatus, STATUS_WORD } from "../lib/status.ts";
 import { AgentMark } from "./AgentMark.tsx";
 import { UsageMeters } from "./UsageMeters.tsx";
+import { folderName, placeLine, shortPathTitle } from "../lib/paneName.ts";
 import { useT } from "../lib/i18n.ts";
 import { groupDirectories } from "../lib/directoryGroups.ts";
 import { useSettings, type SidebarGrouping } from "../lib/settings.ts";
@@ -43,9 +44,12 @@ function stripPaneChrome(title: string, agent: string | null | undefined): strin
 
 export { paneTitle };
 
-/** The title a row or the header shows: the user's label, else the live title minus its chrome. */
+/**
+ * The title a row or the header shows: the user's label, else the live title minus its chrome,
+ * a working directory written out shortened to its last folder (lib/paneName.ts).
+ */
 export function displayPaneTitle(pane: PaneInfo): string {
-  return pane.label?.trim() || stripPaneChrome(paneTitle(pane), pane.agent) || pane.pane_id;
+  return pane.label?.trim() || shortPathTitle(stripPaneChrome(paneTitle(pane), pane.agent)) || pane.pane_id;
 }
 
 /** herdr could not bring this pane back after a restart (0.9.3+ `restore_error`): its reason, on hover. */
@@ -81,10 +85,7 @@ export function BackgroundBadge({ count }: { count?: number }) {
 }
 
 function cwdBasename(cwd: string | null | undefined): string {
-  if (!cwd) return "unknown directory";
-  if (/^[A-Za-z]:\/$/u.test(cwd)) return cwd;
-  const trimmed = cwd.replace(/\/+$/, "");
-  return trimmed.split("/").pop() || cwd;
+  return cwd ? folderName(cwd) : "unknown directory";
 }
 
 interface InlineError {
@@ -390,7 +391,7 @@ export function Sidebar({ snapshot, selectedPaneId, actions, version, embedded =
                       <span className="pane-meta">
                         {pane.restore_error ? <RestoreErrorBadge reason={pane.restore_error} /> : <StatusBadge status={pane.agent_status} />}
                         <BackgroundBadge count={(pane as HerdrPane).background_tasks} />
-                        <span className="pane-subtitle">{byFolder ? workspace.label : `${workspace.label} · ${cwdBasename(pane.cwd)}`}</span>
+                        <span className="pane-subtitle">{byFolder ? workspace.label : placeLine(workspace.label, cwdBasename(pane.cwd))}</span>
                       </span>
                     </span>
                   </div>

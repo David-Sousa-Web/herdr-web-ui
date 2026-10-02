@@ -25,6 +25,9 @@ between releases do not reach them. Remote-PC runtime bundles are versioned sepa
 - The top usage panel shows larger percentages, remaining-capacity colors and compact reset
   countdowns with their local time. Expired reset times stay hidden until fresh usage arrives.
   ([#336](https://github.com/devswha/herdr-web-ui/pull/336) by @Haeminway1)
+- Pane titles that contain a directory show its last folder, and matching workspace and folder
+  names appear once in the sidebar and command palette, including Windows paths.
+  ([#337](https://github.com/devswha/herdr-web-ui/pull/337) by @Haeminway1)
 
 ### Fixed
 - GJC conversations are resolved from the foreground process directory when it differs from

@@ -678,6 +678,7 @@ export function App() {
             autoSelected={autoSelected}
             terminalFontSize={settings.terminalFontSize}
             terminalWheelSpeed={settings.terminalWheelSpeed}
+            terminalFontFamily={settings.terminalFontFamily}
             theme={resolvedTheme}
             palette={settings.palette}
             role={role}

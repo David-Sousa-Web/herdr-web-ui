@@ -2,7 +2,7 @@ import { afterEach, expect, test } from "bun:test";
 import { mkdirSync, mkdtempSync, rmSync, symlinkSync, utimesSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { omoTasks } from "./omo-tasks.ts";
+import { omoRuns, omoTasks } from "./omo-tasks.ts";
 
 const dirs: string[] = [];
 afterEach(() => { for (const dir of dirs.splice(0)) rmSync(dir, { recursive: true, force: true }); });
@@ -56,6 +56,56 @@ test("no task folder, and at most ten ended tasks", () => {
   expect(tasks[0]!.title).toBe("done 0");
 });
 
+function runs(records: Record<string, unknown>[]): string {
+  const cwd = mkdtempSync(join(tmpdir(), "omo-runs-"));
+  dirs.push(cwd);
+  const dir = join(cwd, ".omo", "senpi-task", "dag", "runs");
+  mkdirSync(dir, { recursive: true });
+  records.forEach((record, index) => writeFileSync(join(dir, `dag_${index}.json`), JSON.stringify({ runId: `dag_${index}`, parentSessionId: SESSION, ...record })));
+  return dir;
+}
+const node = (id: string, state: string, more: Record<string, unknown> = {}) => ({ id, state, prompt: "SECRET PROMPT", output: "SECRET OUTPUT", ...more });
+
+test("a session's workflows: name, status and steps by wave, with why a step failed", () => {
+  const dir = runs([{
+    name: "Bug-fix round", status: "running", startedAt: new Date(Date.now() - 60_000).toISOString(),
+    nodes: [node("fix", "completed", { label: "fix it" }), node("review", "failed", { label: "review it", error: { code: "task_cancelled", message: "started too early" } }), node("ship", "pending"), node("stray", "running")],
+    waves: [{ index: 0, nodeIds: ["fix"] }, { index: 1, nodeIds: ["review", "ship"] }],
+  }]);
+  const [run, ...rest] = omoRuns(join(dir, "..", "..", "..", ".."), SESSION);
+  expect(rest).toEqual([]);
+  expect(run).toMatchObject({ id: "dag_0", name: "Bug-fix round", status: "running", ended_at: null });
+  expect(run!.waves).toEqual([
+    [{ id: "fix", label: "fix it", state: "completed", error: null }],
+    [{ id: "review", label: "review it", state: "failed", error: "started too early" }, { id: "ship", label: "ship", state: "pending", error: null }],
+    [{ id: "stray", label: "stray", state: "running", error: null }],
+  ]);
+  expect(JSON.stringify(run)).not.toContain("SECRET");
+});
+
+test("another session's workflows, ones untouched for a day, unknown states and torn files stay out", () => {
+  const dir = runs([
+    { name: "other", status: "running", parentSessionId: "someone-else", nodes: [] },
+    { name: "stale", status: "running", nodes: [] },
+    { name: "odd", status: "paused-ish", nodes: [] },
+    { name: "kept", status: "completed", completedAt: new Date().toISOString(), nodes: [node("a", "completed"), node("b", "weird")] },
+  ]);
+  const old = (Date.now() - 2 * 24 * 60 * 60 * 1000) / 1000;
+  utimesSync(join(dir, "dag_1.json"), old, old);
+  writeFileSync(join(dir, "dag_torn.json"), "{\"runId\": \"dag_t");
+  const found = omoRuns(join(dir, "..", "..", "..", ".."), SESSION);
+  expect(found.map((run) => run.name)).toEqual(["kept"]);
+  expect(found[0]!.waves).toEqual([[{ id: "a", label: "a", state: "completed", error: null }]]);
+});
+
+test("a rewritten checkpoint is read again", () => {
+  const dir = runs([{ name: "first", status: "running", nodes: [node("a", "running")] }]);
+  const cwd = join(dir, "..", "..", "..", "..");
+  expect(omoRuns(cwd, SESSION)[0]!.status).toBe("running");
+  writeFileSync(join(dir, "dag_0.json"), JSON.stringify({ runId: "dag_0", parentSessionId: SESSION, name: "first", status: "completed", completedAt: new Date().toISOString(), nodes: [node("a", "completed"), node("b", "completed")] }));
+  expect(omoRuns(cwd, SESSION)[0]!.status).toBe("completed");
+});
+
 test("only plain files are read: a link, a pipe and an oversized record are passed over", () => {
   const cwd = folder([{ status: "running", task_summary: "plain" }]);
   const dir = join(cwd, ".omo", "senpi-task", "tasks");
@@ -85,6 +135,36 @@ test("a rewritten record is read again, and a host that dies after it was read m
   writeFileSync(path, JSON.stringify({ task_id: "st_0", parent_session_id: SESSION, host_pid: 1, status: "completed", task_summary: "work", terminal_at: ago(0) }));
   utimesSync(path, NOW / 1000 + 5, NOW / 1000 + 5);
   expect(omoTasks(cwd, SESSION, () => up, NOW)[0]).toMatchObject({ status: "completed", ended_at: ago(0) });
+});
+
+test("a paused or waiting workflow is still going, and a blocked step keeps its place", () => {
+  const dir = runs([
+    { name: "paused", status: "paused", startedAt: new Date(Date.now() - 120_000).toISOString(), nodes: [node("a", "completed"), node("b", "blocked")], waves: [{ nodeIds: ["a"] }, { nodeIds: ["b"] }] },
+    { name: "waiting", status: "pending", startedAt: new Date(Date.now() - 60_000).toISOString(), nodes: [node("c", "pending")] },
+  ]);
+  const found = omoRuns(join(dir, "..", "..", "..", ".."), SESSION);
+  expect(found.map((run) => [run.name, run.status, run.ended_at])).toEqual([["paused", "paused", null], ["waiting", "pending", null]]);
+  expect(found[0]!.waves[1]).toEqual([{ id: "b", label: "b", state: "blocked", error: null }]);
+});
+
+test("one folder, two sessions asking in turn: each gets its own workflow from the same cache", () => {
+  const dir = runs([{ name: "mine", status: "running", nodes: [] }, { name: "theirs", status: "running", parentSessionId: "other-session", nodes: [] }]);
+  const cwd = join(dir, "..", "..", "..", "..");
+  expect(omoRuns(cwd, SESSION).map((run) => run.name)).toEqual(["mine"]);
+  expect(omoRuns(cwd, "other-session").map((run) => run.name)).toEqual(["theirs"]);
+  expect(omoRuns(cwd, SESSION).map((run) => run.name)).toEqual(["mine"]);
+});
+
+test("hundreds of other runs from today: the newest are looked at first, and this session's is found", () => {
+  const dir = runs([]);
+  for (let index = 0; index < 600; index++) {
+    const path = join(dir, `dag_a${index}.json`);
+    writeFileSync(path, JSON.stringify({ runId: `dag_a${index}`, parentSessionId: "other-session", status: "completed", nodes: [] }));
+    const at = (Date.now() - 3_600_000) / 1000;
+    utimesSync(path, at, at);
+  }
+  writeFileSync(join(dir, "dag_zzz.json"), JSON.stringify({ runId: "dag_zzz", parentSessionId: SESSION, name: "mine", status: "running", nodes: [] }));
+  expect(omoRuns(join(dir, "..", "..", "..", ".."), SESSION).map((run) => run.name)).toEqual(["mine"]);
 });
 
 test("a task still running under thousands of newer records is found, over a few polls at most", () => {

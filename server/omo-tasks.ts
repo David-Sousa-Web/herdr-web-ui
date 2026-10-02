@@ -1,6 +1,6 @@
 import { lstatSync, readdirSync, readFileSync } from "node:fs";
 import { join } from "node:path";
-import type { OmoTask } from "../shared/protocol.ts";
+import type { OmoRun, OmoRunNode, OmoTask } from "../shared/protocol.ts";
 
 /**
  * The background tasks one OmO session started, for the status line's list. OmO keeps one record
@@ -100,4 +100,105 @@ export function omoTasks(cwd: string, sessionId: string, alive: (pid: number) =>
   running.sort((a, b) => time(a.started_at) - time(b.started_at));
   ended.sort((a, b) => time(b.ended_at) - time(a.ended_at));
   return [...running, ...ended.slice(0, RECENT_LIMIT)];
+}
+
+/**
+ * The workflows (DAG runs) the session started: OmO checkpoints each run to
+ * `<cwd>/.omo/senpi-task/dag/runs/dag_*.json` (`parentSessionId`, nodes with `state`, `waves`),
+ * rewriting the whole file at each step. The files carry every node's prompt and output, a
+ * megabyte or more each, and the folder keeps every run of every session there. So: a file
+ * untouched for a day is not opened (OmO left it, or a run it never finished); the newest come
+ * first (`dag_` names are random); a file is parsed only when its size or time changed, and only
+ * when its `parentSessionId`, near its start, is the session asked about; one call parses at most
+ * RUN_PARSE_BUDGET bytes, the rest on the next poll; files over RUN_MAX_BYTES and anything but a
+ * plain file are passed over. Prompts and outputs stay here.
+ */
+const RUN_LIMIT = 5;
+const RUN_MAX_BYTES = 8 * 1024 * 1024;
+const RUN_PARSE_BUDGET = 16 * 1024 * 1024;
+const NODE_STATES = new Set(["pending", "scheduled", "running", "blocked", "completed", "failed", "skipped", "cancelled"]);
+const RUN_STATES = new Set(["pending", "running", "paused", "completed", "failed", "cancelled"]);
+const ACTIVE = new Set(["pending", "running", "paused"]);
+const PARENT = /"parentSessionId"\s*:\s*"([^"]+)"/;
+/** `run` undefined: another session's, not parsed */
+const runCache = new Map<string, { key: string; parent: string | null; run: OmoRun | null | undefined }>();
+
+function parseRun(record: Row): OmoRun | null {
+  const id = text(record["runId"]);
+  const status = record["status"];
+  if (id === null || typeof status !== "string" || !RUN_STATES.has(status) || !Array.isArray(record["nodes"])) return null;
+  const nodes = new Map<string, OmoRunNode>();
+  for (const value of record["nodes"]) {
+    const node = row(value);
+    const nodeId = text(node?.["id"]);
+    const state = node?.["state"];
+    if (node === null || nodeId === null || typeof state !== "string" || !NODE_STATES.has(state)) continue;
+    nodes.set(nodeId, { id: nodeId, label: text(node["label"]) ?? nodeId, state: state as OmoRunNode["state"], error: state === "failed" ? text(row(node["error"])?.["message"]) : null });
+  }
+  const waves: OmoRunNode[][] = [];
+  const placed = new Set<string>();
+  for (const value of Array.isArray(record["waves"]) ? record["waves"] : []) {
+    const ids = row(value)?.["nodeIds"];
+    const wave = (Array.isArray(ids) ? ids : []).flatMap((nodeId) => {
+      const node = typeof nodeId === "string" && !placed.has(nodeId) ? nodes.get(nodeId) : undefined;
+      if (node === undefined) return [];
+      placed.add(node.id);
+      return [node];
+    });
+    if (wave.length > 0) waves.push(wave);
+  }
+  const rest = [...nodes.values()].filter((node) => !placed.has(node.id));
+  if (rest.length > 0) waves.push(rest);
+  return {
+    id,
+    name: text(record["name"]) ?? text(record["runKey"]) ?? id,
+    status: status as OmoRun["status"],
+    started_at: text(record["startedAt"]) ?? text(record["createdAt"]),
+    ended_at: ACTIVE.has(status) ? null : text(record["completedAt"]) ?? text(record["updatedAt"]),
+    waves,
+  };
+}
+
+/** Workflows still going first (oldest first), then up to five that ended in the last day (newest first). */
+export function omoRuns(cwd: string, sessionId: string, now = Date.now()): OmoRun[] {
+  const dir = join(cwd, ".omo", "senpi-task", "dag", "runs");
+  let names: string[];
+  try { names = readdirSync(dir); } catch { return []; }
+  const recent: { path: string; key: string; size: number; mtime: number }[] = [];
+  for (const name of names.slice(0, 10_000)) {
+    if (!name.startsWith("dag_") || !name.endsWith(".json")) continue;
+    const path = join(dir, name);
+    try {
+      const stat = lstatSync(path);
+      if (!stat.isFile() || stat.size > RUN_MAX_BYTES || now - stat.mtimeMs > RECENT_MS) continue;
+      recent.push({ path, key: `${stat.mtimeMs}:${stat.size}`, size: stat.size, mtime: stat.mtimeMs });
+    } catch { continue; }
+  }
+  recent.sort((a, b) => b.mtime - a.mtime);
+  const active: OmoRun[] = [];
+  const ended: OmoRun[] = [];
+  let budget = RUN_PARSE_BUDGET;
+  for (const file of recent) {
+    let cached = runCache.get(file.path);
+    if (cached?.key !== file.key || (cached.run === undefined && cached.parent === sessionId)) {
+      if (budget < file.size) continue; // read on a later poll
+      budget -= file.size;
+      let content: string;
+      try { content = readFileSync(file.path, "utf8"); } catch { continue; }
+      const parent = PARENT.exec(content.slice(0, 4096))?.[1] ?? null;
+      let run: OmoRun | null | undefined;
+      if (parent !== sessionId) run = undefined;
+      else {
+        try { const record = row(JSON.parse(content)); run = record === null ? null : parseRun(record); } catch { continue; } // being rewritten
+      }
+      cached = { key: file.key, parent, run };
+      runCache.set(file.path, cached);
+    }
+    if (cached.parent !== sessionId || !cached.run) continue;
+    (ACTIVE.has(cached.run.status) ? active : ended).push(cached.run);
+  }
+  if (runCache.size > 2048) runCache.clear();
+  active.sort((a, b) => time(a.started_at) - time(b.started_at));
+  ended.sort((a, b) => time(b.ended_at) - time(a.ended_at));
+  return [...active, ...ended.slice(0, RUN_LIMIT)];
 }

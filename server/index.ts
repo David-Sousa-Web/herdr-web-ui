@@ -749,7 +749,10 @@ export function createServer(
   }
 
   const collector = startStatusCollector({
-    onStatus: (paneId, raw, agent) => {
+    onStatus: (paneId, raw, agent, replay) => {
+      // read back from a snapshot around a gap between subscriptions. An OmO pane's status there
+      // is OmO's own or herdr's by turns (server/omo-status.ts), and a difference is no change
+      if (replay && (omo.runs(paneId) || !completions.replayed(paneId, raw, replay))) return;
       // another agent took an OmO pane: what OmO worked on there is not that agent's to finish
       if (omo.named(paneId, agent)) completions.forget(paneId);
       // herdr says `claude/idle` for an OmO pane whatever it does: its own status stands
@@ -767,7 +770,12 @@ export function createServer(
       push.onStatus(paneId, "idle").catch(logPushError);
     },
     onBaseline: (panes) => push.seed(panes),
-    onResync: (panes, newer) => push.resync(panes, newer),
+    // the tracker first: what it makes of each pane (a finish after work is done, not idle) is
+    // what the alerts are measured against from here, or the next event would alert of it
+    onResync: (panes, newer) => {
+      completions.resync(panes, newer);
+      push.resync(panes.map((pane) => ({ ...pane, agent_status: completions.current(pane.pane_id) ?? pane.agent_status })), newer);
+    },
     onPaneEnded: (paneId) => {
       completions.forget(paneId);
       broadcastAll({ type: "pane-exited", pane_id: paneId });

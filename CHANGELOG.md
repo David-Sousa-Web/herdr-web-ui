@@ -8,6 +8,12 @@ between releases do not reach them. Remote-PC runtime bundles are versioned sepa
 ## [Unreleased]
 
 ### Added
+- Voice input in the chat composer and the terminal input line. Hold or tap the mic and speak,
+  Korean and English mixed; the text lands in the box at the caret and is never sent by itself.
+  It uses your own OpenAI API key, kept on the server (Settings → Voice input), and falls back to
+  the browser's speech recognition without one. Off by default. Silence before, between and after
+  the words is left out of the recording, so it is neither uploaded nor billed.
+  ([#231](https://github.com/devswha/herdr-web-ui/pull/231) by @nahwan-kim)
 - While the app is open, an alert drops in from the top edge as a card: an agent that needs input,
   one that finished (by this device's alert choice) or a terminal that ended. A tap opens that
   pane, a flick up puts the card away, and it leaves by itself after a few seconds. No card for

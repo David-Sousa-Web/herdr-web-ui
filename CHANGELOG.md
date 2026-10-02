@@ -8,6 +8,9 @@ between releases do not reach them. Remote-PC runtime bundles are versioned sepa
 ## [Unreleased]
 
 ### Added
+- Native Windows x64 installation through `install.ps1`, with the same herdr plugin startup
+  and updates. Windows needs Bun and Git, without Node or WSL, and keeps using the terminal
+  screen mirror. ([#330](https://github.com/devswha/herdr-web-ui/pull/330) by @JJLiebig)
 - Settings can choose Chat, Terminal, or Auto as the default view for panes. Changing it resets
   remembered pane views on this device. Shell panes still open in Terminal.
   ([#325](https://github.com/devswha/herdr-web-ui/pull/325) by @Haeminway1)

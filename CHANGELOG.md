@@ -42,6 +42,9 @@ between releases do not reach them. Remote-PC runtime bundles are versioned sepa
   lens and mode changes; late acknowledgements preserve replacement edits. Composition keeps
   its Enter and Send button, and terminal key-bar taps wait until it finishes.
   ([#334](https://github.com/devswha/herdr-web-ui/pull/334))
+- The background tasks list stays below the app header on a short screen, such as a phone held
+  sideways, and scrolls inside the room above the message box.
+  ([#354](https://github.com/devswha/herdr-web-ui/pull/354))
 - The mobile message box sits closer to the home indicator while retaining its base spacing.
   ([#335](https://github.com/devswha/herdr-web-ui/pull/335) by @Haeminway1)
 - Adding or reconnecting a remote PC says when herdr is not running or not answering there,

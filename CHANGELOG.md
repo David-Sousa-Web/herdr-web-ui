@@ -8,6 +8,10 @@ between releases do not reach them. Remote-PC runtime bundles are versioned sepa
 ## [Unreleased]
 
 ### Added
+- The sidebar opens a new tab in a workspace (a `+` on the workspace, or on the row when it
+  holds a single pane) and splits a pane beside itself, through `POST /api/tab/create` and
+  `POST /api/pane/split`. The new pane is selected once herdr reports it.
+  ([#307](https://github.com/devswha/herdr-web-ui/pull/307) by @piotrchabros)
 - Settings → Appearance lets you group sidebar sessions by folder, combining panes with the
   same full working-directory path within each PC. Grouping by workspace remains the default;
   the selected mode and each mode's collapsed groups are remembered independently.

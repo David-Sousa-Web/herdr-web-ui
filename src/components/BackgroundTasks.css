@@ -22,6 +22,28 @@
 .bg-tasks-toggle svg {
   width: 12px;
   height: 12px;
+  flex: none;
+}
+
+.bg-tasks-count {
+  display: none;
+}
+
+/* a phone's status line is one row: the icon and the number say it, the button's name has the words */
+@media (max-width: 480px) {
+  /* without its words the chip would be a 28px target, an icon alone while nothing runs */
+  .bg-tasks-toggle {
+    justify-content: center;
+    min-width: var(--touch-target);
+  }
+
+  .bg-tasks-label {
+    display: none;
+  }
+
+  .bg-tasks-count {
+    display: inline;
+  }
 }
 
 /* nothing running: the list of what ran stays at hand, without the working tint */

@@ -16,6 +16,7 @@ import { checkTerminalCopy } from "./terminal-copy-regression.ts";
 import { checkUsageMeters } from "./usage-regression.ts";
 import { checkNotificationStartup } from "./notification-startup-regression.ts";
 import { checkMobileViewport } from "./mobile-viewport-regression.ts";
+import { checkTerminalFileInput } from "./terminal-file-input-regression.ts";
 import { UsageService } from "../server/usage.ts";
 
 const root = mkdtempSync(join(tmpdir(), "herdr-web-ui-browser-"));
@@ -56,6 +57,7 @@ try {
   });
   const context = await browser.newContext({ viewport: { width: 1280, height: 800 } });
   await context.addInitScript((ids) => {
+    localStorage.setItem("herdr-web-ui:settings", JSON.stringify({ language: "en" }));
     for (const id of ids) localStorage.setItem(`herdr-web-ui:view:${id}`, "chat");
   }, panes);
   const page = await context.newPage();
@@ -76,8 +78,10 @@ try {
   page.setDefaultTimeout(10_000);
   page.on("pageerror", (error) => errors.push(error.message));
   const painted = new Set<string>();
+  const sockets: import("playwright-core").WebSocket[] = [];
   const inputs: Array<{ pane_id: string; text: string }> = [];
   page.on("websocket", (socket) => {
+    sockets.push(socket);
     socket.on("framereceived", ({ payload }) => {
       const message = JSON.parse(String(payload));
       if (message.type === "pty-data") painted.add(message.pane_id);
@@ -132,6 +136,7 @@ try {
   // where it can trigger image paste against the server's unrelated clipboard.
   await context.grantPermissions(["clipboard-read", "clipboard-write"], { origin });
   await page.getByTitle("Live terminal (⌘⇧J)", { exact: true }).click();
+  await checkTerminalFileInput(page, sockets[0]!);
   const terminalInput = page.locator(".xterm-helper-textarea");
   for (const [shortcut, text] of [
     ["Control+v", "# terminal paste 한글"],

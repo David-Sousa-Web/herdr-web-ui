@@ -124,6 +124,8 @@ export function PaneTerminal({
   openFileRef.current = openFile;
   const machineId = useMachineId();
   const { answerPanePrompt, uploadPaneImage } = useMachineApi();
+  const uploadFileRef = useRef(uploadPaneImage);
+  uploadFileRef.current = uploadPaneImage;
   const chatView = view === "chat";
   const chatViewRef = useRef(chatView);
   chatViewRef.current = chatView;
@@ -650,7 +652,8 @@ export function PaneTerminal({
           term.options.disableStdin = observeRef.current || secretRef.current !== null;
         }
       } else if (message.type === "pty-exit") {
-        if (message.pane_id === paneRef.current) setEnded(true);
+        // an ended pane takes no input: a file dropped on it must not upload and paste either
+        if (message.pane_id === paneRef.current) { setEnded(true); term.options.disableStdin = true; }
       } else if (message.type === "role-ack") {
         // the server is the authority on the role; only after this ack may an
         // interact client reclaim the shared grid it stopped owning
@@ -740,6 +743,62 @@ export function PaneTerminal({
       }
       socket.sendInput(current, data);
     });
+
+    // Browsers expose dropped files as bytes, not local paths. Save them beside
+    // the pane and paste the returned paths; never send Enter with a drop.
+    // Batches upload one after another, so overlapping drops paste their paths in the order dropped.
+    let fileQueue: Promise<void> = Promise.resolve();
+    const uploadFiles = (files: File[]): void => {
+      const pane = paneRef.current;
+      if (!pane || !socket.connected || term.options.disableStdin) return;
+      fileQueue = fileQueue.then(() => uploadBatch(pane, files));
+    };
+    const uploadBatch = async (pane: string, files: File[]): Promise<void> => {
+      if (paneRef.current !== pane || !socket.connected || term.options.disableStdin) return;
+      try {
+        const paths: string[] = [];
+        for (const file of files) paths.push(await uploadFileRef.current(pane, file));
+        // An upload can finish after the user has switched panes or lost input access.
+        if (paneRef.current !== pane || chatViewRef.current || !socket.connected || term.options.disableStdin) return;
+        term.paste(paths.map((path) => `'${path.replaceAll("'", "'\\''")}'`).join(" ") + " ");
+        term.focus();
+      } catch (error) {
+        if (paneRef.current === pane) noteClipboard(error instanceof Error ? error.message : String(error));
+      }
+    };
+    const onFilePaste = (event: ClipboardEvent): void => {
+      // xterm handles text (and bracketed paste) itself. A file-only clipboard
+      // needs the upload route instead; copied paths must remain native text.
+      if (event.clipboardData?.getData("text/plain")) return;
+      const files = Array.from(event.clipboardData?.files ?? []);
+      if (files.length === 0) return;
+      event.preventDefault();
+      event.stopPropagation();
+      uploadFiles(files);
+    };
+    const onDragOver = (event: DragEvent): void => {
+      if (!event.dataTransfer) return;
+      if (!event.dataTransfer.types.some((type) => type === "Files" || type === "text/plain")) return;
+      event.preventDefault();
+      event.dataTransfer.dropEffect = term.options.disableStdin ? "none" : "copy";
+    };
+    const onDrop = (event: DragEvent): void => {
+      event.preventDefault();
+      if (!event.dataTransfer || !socket.connected || term.options.disableStdin) return;
+      const files = Array.from(event.dataTransfer.files);
+      if (files.length > 0) {
+        uploadFiles(files);
+        return;
+      }
+      const text = event.dataTransfer.getData("text/plain");
+      if (text) {
+        term.paste(text);
+        term.focus();
+      }
+    };
+    host.addEventListener("paste", onFilePaste, { capture: true });
+    host.addEventListener("dragover", onDragOver);
+    host.addEventListener("drop", onDrop);
 
     // Dragging a window edge fires this every frame. Each resize of the pty makes herdr
     // reflow the pane and the program in it redraw (Claude Code repaints its whole
@@ -854,6 +913,9 @@ export function PaneTerminal({
       window.removeEventListener("focus", refit);
       document.removeEventListener("visibilitychange", onVisible);
       onData.dispose();
+      host.removeEventListener("paste", onFilePaste, { capture: true });
+      host.removeEventListener("dragover", onDragOver);
+      host.removeEventListener("drop", onDrop);
       offDisconnect();
       osc52.dispose();
       if (clipboardTimerRef.current !== null) window.clearTimeout(clipboardTimerRef.current);

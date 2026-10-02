@@ -30,6 +30,9 @@ between releases do not reach them. Remote-PC runtime bundles are versioned sepa
   ([#292](https://github.com/devswha/herdr-web-ui/pull/292))
 
 ### Fixed
+- The terminal accepts dropped file paths and uploads dropped or pasted files to
+  the pane's working directory before inserting their quoted paths, without submitting them.
+  ([#304](https://github.com/devswha/herdr-web-ui/pull/304) by @beomq)
 - A message sent to Claude Code while it is working shows in the chat. Claude records such a
   message differently from one sent while it waits, and the chat skipped it, so the agent acted
   on words the chat never showed.

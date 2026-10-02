@@ -8,6 +8,10 @@ between releases do not reach them. Remote-PC runtime bundles are versioned sepa
 ## [Unreleased]
 
 ### Added
+- Settings → Appearance lets you group sidebar sessions by folder, combining panes with the
+  same full working-directory path within each PC. Grouping by workspace remains the default;
+  the selected mode and each mode's collapsed groups are remembered independently.
+  ([#299](https://github.com/devswha/herdr-web-ui/pull/299) by @beomq)
 - While an OmO pane has background tasks running, the chat's status line says how many, and tapping
   it lists them: what each is doing, its category and model, how long it has run, its turns, tool
   calls and tokens. The newest tasks that ended in the last day (up to ten) are one line under

@@ -744,7 +744,16 @@ export function PaneTerminal({
 
     const poll = window.setInterval(() => setConnected(socket.connected), 1000);
 
+    // onKey runs after xterm drains a pending IME commit, immediately before the
+    // key's onData. Remap only that CR, preserving composition text and its order.
+    let shiftEnter = false;
+    const onShiftEnter = term.onKey(({ key, domEvent: event }) => {
+      shiftEnter = !term.options.disableStdin && key === "\r" && event.key === "Enter" && event.shiftKey
+        && !event.ctrlKey && !event.altKey && !event.metaKey && !event.isComposing && event.keyCode !== 229;
+    });
     const onData = term.onData((data) => {
+      if (shiftEnter && data === "\r") data = "\x1b\r";
+      shiftEnter = false;
       const current = paneRef.current;
       if (!current || observeRef.current || secretRef.current !== null || heldRef.current) return;
       let input = data;
@@ -931,6 +940,7 @@ export function PaneTerminal({
       selectionChange.dispose();
       window.removeEventListener("focus", refit);
       document.removeEventListener("visibilitychange", onVisible);
+      onShiftEnter.dispose();
       onData.dispose();
       host.removeEventListener("paste", onFilePaste, { capture: true });
       host.removeEventListener("dragover", onDragOver);

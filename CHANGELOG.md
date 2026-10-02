@@ -44,6 +44,9 @@ between releases do not reach them. Remote-PC runtime bundles are versioned sepa
   ([#334](https://github.com/devswha/herdr-web-ui/pull/334))
 - The mobile message box sits closer to the home indicator while retaining its base spacing.
   ([#335](https://github.com/devswha/herdr-web-ui/pull/335) by @Haeminway1)
+- Shift+Enter in the live terminal sends the same newline chord as Alt+Enter, instead of plain
+  Enter that submits an agent's message. Pending IME text is sent before the newline chord.
+  ([#339](https://github.com/devswha/herdr-web-ui/pull/339) by @WOULDU-pres)
 
 ## [0.3.43] - 2026-10-02
 

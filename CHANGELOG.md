@@ -8,6 +8,11 @@ between releases do not reach them. Remote-PC runtime bundles are versioned sepa
 ## [Unreleased]
 
 ### Added
+- While an OmO pane has background tasks running, the chat's status line says how many, and tapping
+  it lists them: what each is doing, its category and model, how long it has run, its turns, tool
+  calls and tokens, and below, the tasks that ended in the last day and whether they finished,
+  failed, were cancelled or were lost with OmO's process. A remote PC lists them once it runs a
+  bridge that knows this list. ([#305](https://github.com/devswha/herdr-web-ui/pull/305))
 - An OmO turn that set or updated a goal shows it on the turn, beside the skills, also while its work
   is folded: the objective, whether it is in progress, complete, blocked, paused or out of budget, and
   opened, the whole objective, why it is blocked and the time and tokens spent on it so far.

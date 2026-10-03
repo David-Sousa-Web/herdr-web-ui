@@ -7,6 +7,16 @@ between releases do not reach them. Remote-PC runtime bundles are versioned sepa
 
 ## [Unreleased]
 
+### Added
+- A tab is renamed and closed from the tab strip, as herdr's prefix+shift+t and prefix+shift+x.
+  With a mouse: an **x** on the open tab and on the one under the pointer, a double-click on the
+  name to type a new one, a right-click for a menu with **Rename tab** and **Close tab**. With
+  keys on a focused tab: F2 and Delete. On a phone the open tab carries a chevron that opens
+  the same menu. A close asks first only when an agent in the tab is still working or the tab
+  is the workspace's last one, which closes the workspace with it. Remote PCs get the two with
+  their next bridge update.
+  ([#391](https://github.com/devswha/herdr-web-ui/pull/391))
+
 ### Fixed
 - In the iPhone home screen app, a dialog with a text field stays above the keyboard: the command
   palette, and the other bottom sheets, ended at the bottom of the screen, behind the keyboard, and
@@ -19,6 +29,9 @@ between releases do not reach them. Remote-PC runtime bundles are versioned sepa
   or an alert, its `+` stays at the end of the strip however many tabs there are, and on a touch
   screen a split tab's pane picker no longer overlaps the tab's name.
   ([#392](https://github.com/devswha/herdr-web-ui/pull/392))
+- A tab herdr names by its number reads **Tab n** by its place in the strip: after a tab before
+  it closed, it showed as a bare number.
+  ([#391](https://github.com/devswha/herdr-web-ui/pull/391))
 
 ### Changed
 - **New session** is **New workspace**: the `+` on a PC's header, the button of an empty PC, the

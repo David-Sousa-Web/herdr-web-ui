@@ -7,6 +7,14 @@ between releases do not reach them. Remote-PC runtime bundles are versioned sepa
 
 ## [Unreleased]
 
+### Added
+- A workspace row's **⋯** menu has **New worktree** and **Open worktree…**, as herdr's own
+  worktree keys do. New worktree checks a branch out as a git worktree under herdr's worktree
+  folder and opens it as a workspace next to the repository's; Open worktree… lists the
+  repository's other checkouts and opens one, or goes back to the workspace it is already open
+  in. Remote PCs get the two with their next bridge update.
+  ([#383](https://github.com/devswha/herdr-web-ui/pull/383))
+
 ### Fixed
 - Settings → Updates no longer leaves **Check for updates** and **Update and restart** disabled
   when the answer to a click arrives while the page is hidden, as when a phone sends the app to

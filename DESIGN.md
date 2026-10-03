@@ -276,8 +276,9 @@ One set for both themes: the card is island black wherever it shows.
 - Hover or `aria-selected` uses `--bg-hover`. Headings are dim uppercase micro labels.
 - The sidebar's row menu (`.row-menu`) is a `.menu` drawn through a portal at fixed coordinates,
   under its `⋯` with right edges aligned, above it when the screen ends first, and over the drawer.
-  A one-pane row offers Rename workspace, Rename pane, then Close under a hairline; a workspace
-  header Rename workspace and Close workspace; a pane under a header Rename pane and Close. The
+  A one-pane row offers Rename workspace, Rename pane, New worktree, Open worktree…, then Close
+  under a hairline; a workspace header Rename workspace, New worktree, Open worktree… and Close
+  workspace; a pane under a header Rename pane and Close. The
   danger item takes `--status-blocked`. At `<=640px` it is a `.modal` bottom sheet (`.row-sheet`):
   a grip, the row's name and place, 48px rows and a Cancel button; Tab stays among them. Escape, a press outside and
   focus leaving it close it (on a desktop a scroll or a resize too), and focus returns to the
@@ -361,6 +362,14 @@ One set for both themes: the card is island black wherever it shows.
 - Submit calls `POST /api/workspace/create`; the server performs `workspace.create` and, when an
   agent was chosen, `agent.start` in its root pane. Pending and partial agent-start failure are
   explicit before the created pane opens.
+
+### Worktree dialog (`.worktree-modal`)
+- From a workspace row's menu, as herdr's prefix+shift+g: **New worktree** asks for the branch
+  (required), where to start from (HEAD when empty, ignored for a branch that exists) and an
+  optional name, then checks the branch out under herdr's worktree folder and opens it as a
+  workspace grouped with the repository's; its pane is selected. **Open worktree…** lists the
+  repository's other checkouts as rows (branch, mono path, an **Already open** pill), and a row
+  opens or returns to that workspace. herdr's own words explain a refusal, inside the dialog.
 
 ### Header context and connection
 - A selected pane shows agent mark + title over workspace + cwd. With no selection, the brand fills

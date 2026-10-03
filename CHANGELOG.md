@@ -60,6 +60,8 @@ between releases do not reach them. Remote-PC runtime bundles are versioned sepa
   ([#358](https://github.com/devswha/herdr-web-ui/pull/358))
 
 ### Fixed
+- Cmd+Backspace on macOS sends Ctrl+U in the live terminal, deleting the input back to
+  the start of the line instead of a single character. Pending IME text keeps its order.
 - GJC conversations are resolved from the foreground process directory when it differs from
   the pane directory. ([#333](https://github.com/devswha/herdr-web-ui/pull/333) by @Kinetic27)
 - Direct terminal input preserves rapid IME commits when punctuation arrives before composition

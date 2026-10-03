@@ -7,6 +7,14 @@ between releases do not reach them. Remote-PC runtime bundles are versioned sepa
 
 ## [Unreleased]
 
+### Added
+- **Settings → herdr → Update herdr** updates herdr itself from the app, on the PC the app runs
+  on (Linux and macOS). herdr refuses `herdr update` typed into one of its panes, and every
+  terminal in the app is a pane, so the server runs it instead: it installs the newest herdr and
+  moves the running panes onto it. Panes and agents keep running, and open terminals reconnect.
+  A newer herdr installed from a shell is picked up the same way.
+  ([#373](https://github.com/devswha/herdr-web-ui/pull/373))
+
 ### Changed
 - In the sidebar's By workspace view, a workspace with one pane is a single row again, as it was
   before 0.3.44: no numbered header above it, and the row carries the reorder handle and names

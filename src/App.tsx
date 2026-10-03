@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { Bell, FolderOpen, Lock, Menu, MessageSquare, PanelLeft, Search, SquareTerminal, X } from "lucide-react";
+import { Bell, FolderOpen, Lock, Menu, MessageSquare, PanelLeft, Plus, Search, SquareTerminal, X } from "lucide-react";
 
 import type { AgentStatus, ClientRole, ServerMessage, AccessRefusal, HealthAuth, HerdrPane } from "../shared/protocol.ts";
 import { ApiError, authenticate, fetchHealth, fetchBridgeHealth, fetchMachines, fetchSession, pairDevice, sendTestPush, signOut, type HealthInfo } from "./lib/api.ts";
@@ -8,7 +8,8 @@ import { displayPaneTitle } from "./components/Sidebar.tsx";
 import { PaneTerminal } from "./components/PaneTerminal.tsx";
 import { AccessGate } from "./components/AccessGate.tsx";
 import { AgentMark } from "./components/AgentMark.tsx";
-import { NewSessionDialog } from "./components/NewSessionDialog.tsx";
+import { NewSessionDialog, type NewTabTarget } from "./components/NewSessionDialog.tsx";
+import { TabStrip } from "./components/TabStrip.tsx";
 import { SettingsDialog } from "./components/SettingsDialog.tsx";
 import { CommandPalette } from "./components/CommandPalette.tsx";
 import { MachineContext } from "./lib/machineContext.tsx";
@@ -198,6 +199,8 @@ export function App() {
   const [settingsOpen, setSettingsOpen] = useState(false);
   const closeSettings = useCallback(() => setSettingsOpen(false), []);
   const [newSessionOpen, setNewSessionOpen] = useState(false);
+  // the dialog makes a tab in this workspace instead of a workspace, while set
+  const [newTab, setNewTab] = useState<NewTabTarget | null>(null);
   const [connected, setConnected] = useState(false);
   const [outputStopped, setOutputStopped] = useState(false);
   // the connection's role: the server's role-ack confirms it (no UI control today)
@@ -555,6 +558,26 @@ export function App() {
       openNewSession: () => {
         setDrawerOpen(false);
         setNewSessionMachineId(selectedMachineId);
+        setNewTab(null);
+        setNewSessionOpen(true);
+      },
+      openNewTab: (target) => {
+        const machineId = target?.machineId ?? selectionRef.current.machineId;
+        const roster = machinesRef.current.find((m) => m.id === machineId)?.snapshot;
+        // pane ids repeat across PCs: the selected pane counts only on the PC the tab is for
+        const selectedPaneId = selectionRef.current.machineId === machineId ? selectionRef.current.paneId : null;
+        const workspaceId = target?.workspaceId ?? roster?.panes.find((pane) => pane.pane_id === selectedPaneId)?.workspace_id;
+        const workspace = roster?.workspaces.find((candidate) => candidate.workspace_id === workspaceId);
+        if (!roster || !workspace) return;
+        // the tab's folder is the workspace's: a worktree's checkout, else where the pane in
+        // front (the selected one, else the one herdr has in front, else the first) is
+        const panes = roster.panes.filter((pane) => pane.workspace_id === workspace.workspace_id);
+        const inFront = panes.find((pane) => pane.pane_id === selectedPaneId)
+          ?? panes.find((pane) => pane.pane_id === roster.layouts?.find((layout) => layout.tab_id === workspace.active_tab_id)?.focused_pane_id)
+          ?? panes[0];
+        setDrawerOpen(false);
+        setNewSessionMachineId(machineId);
+        setNewTab({ workspaceId: workspace.workspace_id, workspaceLabel: workspace.label, cwd: workspace.worktree?.checkout_path ?? inFront?.cwd ?? null, number: workspace.tab_count + 1 });
         setNewSessionOpen(true);
       },
       openPalette: () => setPaletteOpen(true),
@@ -657,6 +680,12 @@ export function App() {
         ) : (
           <><Brand /><span className="machine-context-name">{selectedMachine?.name ?? selectedMachineId}</span></>
         )}
+        {selectedPane && selectedWorkspace && (
+          <button type="button" className="btn btn-ghost new-tab-button" title={t("New tab in {workspace}", { workspace: selectedWorkspace.label })} onClick={() => actions.openNewTab()}>
+            <Plus aria-hidden="true" />
+            <span>{t("New tab")}</span>
+          </button>
+        )}
         {selectedPane && (
           <div className="segmented view-switch" role="group" aria-label="Pane view">
             <button type="button" aria-pressed={view === "chat"} onClick={() => setView("chat")} title={t("Chat transcript (⌘⇧J)")}>
@@ -713,13 +742,17 @@ export function App() {
       <div className="app-body">
         <aside id="workspace-drawer" className={`sidebar${drawerOpen ? " is-open" : ""}`}>
           {error && <div className="error-state" role="alert"><p>{error}</p><button className="btn" onClick={() => void load()}>{t("Retry")}</button></div>}
-          <MachineSidebar version={health?.herdr?.version ?? null} machines={machines} selectedMachineId={selectedMachineId} selectedPaneId={selectedPaneId} actions={actions} onSelect={selectTarget} onSetup={(machine, update = false) => { setUpdateRemote(update); setMachineDialog(machine); }} onNew={(id) => { setNewSessionMachineId(id); setNewSessionOpen(true); setDrawerOpen(false); }} />
+          <MachineSidebar version={health?.herdr?.version ?? null} machines={machines} selectedMachineId={selectedMachineId} selectedPaneId={selectedPaneId} actions={actions} onSelect={selectTarget} onSetup={(machine, update = false) => { setUpdateRemote(update); setMachineDialog(machine); }} onNew={(id) => { setNewSessionMachineId(id); setNewTab(null); setNewSessionOpen(true); setDrawerOpen(false); }} />
         </aside>
 
         {drawerOpen && <div className="scrim" aria-hidden="true" onClick={() => setDrawerOpen(false)} />}
 
         {/* a file path in the chat opens in the viewer, relative to the selected pane's folder */}
         <OpenFileContext.Provider value={selectedPaneId !== null ? viewFile : null}>
+        <div className="pane-column">
+        {snapshot && selectedPane && selectedWorkspace && (
+          <TabStrip snapshot={snapshot} workspace={selectedWorkspace} selectedPane={selectedPane} onSelectPane={selectPane} onNewTab={() => actions.openNewTab()} />
+        )}
         <main className="terminal-host">
           <PaneTerminal
             key={selectedMachineId}
@@ -741,6 +774,7 @@ export function App() {
             onServerMessage={handleServerMessage}
           />
         </main>
+        </div>
         </OpenFileContext.Provider>
       </div>
 
@@ -748,6 +782,7 @@ export function App() {
         key={newSessionMachineId}
         machineName={machines.find((m) => m.id === newSessionMachineId)?.name ?? newSessionMachineId}
         open={newSessionOpen}
+        tab={newTab}
         defaultCwd={newSessionMachineId === selectedMachineId ? selectedPane?.cwd ?? null : null}
         onClose={() => setNewSessionOpen(false)}
         onCreated={(paneId) => {

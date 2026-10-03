@@ -132,6 +132,12 @@ describe("alert choices", () => {
     expect(sanitizeSettings({ alertsOn: "no" }).alertsOn).toBe(true);
   });
 
+  it("keep the alert sound off until this device chooses it", () => {
+    expect(DEFAULT_SETTINGS.alertSound).toBe(false);
+    expect(sanitizeSettings({ alertSound: true }).alertSound).toBe(true);
+    expect(sanitizeSettings({ alertSound: "yes" }).alertSound).toBe(false);
+  });
+
   it("default to questions and long turns, and drop anything unknown to the default", () => {
     expect(alertPrefs(DEFAULT_SETTINGS)).toEqual({ input: true, done: "long" });
     expect(alertPrefs(sanitizeSettings({ alertInput: false, alertDone: "always" }))).toEqual({ input: false, done: "always" });

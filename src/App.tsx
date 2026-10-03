@@ -45,6 +45,7 @@ import { useScreenWakeLock } from "./lib/wakeLock.ts";
 import { watchDrawerSwipe } from "./lib/edgeSwipe.ts";
 import { Droplet } from "./components/Droplet.tsx";
 import { dropletAllows, endedTurn, showDroplet, trackTurn, type DropletKind } from "./lib/droplet.ts";
+import { playAlertSound, unlockAlertSound, type AlertSoundKind } from "./lib/alertSound.ts";
 
 const APP_TITLE = "herdr web ui";
 const POLL_MS = 5000;
@@ -220,6 +221,8 @@ export function App() {
   const lastTurnRef = useRef<Map<string, number>>(new Map());
   const alertInAppRef = useRef(settings.alertInApp);
   alertInAppRef.current = settings.alertInApp;
+  const alertSoundRef = useRef(settings.alertSound);
+  alertSoundRef.current = settings.alertSound;
   const refetchTimer = useRef<number | null>(null);
   const snapshotRef = useRef<typeof snapshot>(null);
   snapshotRef.current = snapshot;
@@ -303,6 +306,25 @@ export function App() {
     });
   }, []);
 
+  // The alert sound (lib/alertSound.ts): heard also while the tab is hidden and a Focus silences
+  // system notifications; never for the pane open in front of the user.
+  const chime = useCallback((machine: Machine, pane: HerdrPane, kind: AlertSoundKind) => {
+    if (!alertsOnRef.current || !alertSoundRef.current) return;
+    const open = selectionRef.current;
+    if (document.visibilityState === "visible" && open.machineId === machine.id && open.paneId === pane.pane_id && !drawerOpenRef.current) return;
+    playAlertSound(kind);
+  }, []);
+
+  // a page plays audio only after a tap or key on it: each one lets the next chime play. A mouse
+  // activates the page on press, a touch only on release, so both ends of a tap try
+  useEffect(() => {
+    if (!settings.alertSound) return;
+    const unlock = () => { void unlockAlertSound(); };
+    const events = ["pointerdown", "pointerup", "keydown"] as const;
+    for (const event of events) window.addEventListener(event, unlock, true);
+    return () => { for (const event of events) window.removeEventListener(event, unlock, true); };
+  }, [settings.alertSound]);
+
   // One SSE subscription watches every PC, even when no terminal is selected.
   useEffect(() => {
     if (locked !== false) return;
@@ -332,7 +354,11 @@ export function App() {
         const pane = machine.snapshot?.panes.find((p) => p.pane_id === message.pane_id);
         const worked = trackTurn(turnStartRef.current, key, previous, message.agent_status, Date.now());
         if (worked !== null) lastTurnRef.current.set(key, worked);
-        if (pane && shouldNotifyStatus(previous, message.agent_status) && dropletAllows(alertsRef.current, message.agent_status, worked)) dropIn(machine, pane, message.agent_status === "blocked" ? "blocked" : "done");
+        if (pane && shouldNotifyStatus(previous, message.agent_status) && dropletAllows(alertsRef.current, message.agent_status, worked)) {
+          const kind = message.agent_status === "blocked" ? "blocked" : "done";
+          dropIn(machine, pane, kind);
+          chime(machine, pane, kind);
+        }
         if (pane && shouldNotifyStatus(previous, message.agent_status) && alertsOnRef.current && !pushOnRef.current && alertsAllow(alertsRef.current, message.agent_status)) showPaneStatusNotification(message.pane_id, `${machine.name} · ${displayPaneTitle(pane)}`, message.agent_status, () => selectTargetRef.current(machine.id, message.pane_id), machine.id);
         setMachines((list) => {
           let changed = false;
@@ -349,7 +375,10 @@ export function App() {
       if (message.type === "pane-exited") {
         const pane = machine.snapshot?.panes.find((p) => p.pane_id === message.pane_id);
         const worked = endedTurn(turnStartRef.current, lastTurnRef.current, paneStorageId(machine.id, message.pane_id), Date.now());
-        if (pane && dropletAllows(alertsRef.current, "done", worked)) dropIn(machine, pane, "ended");
+        if (pane && dropletAllows(alertsRef.current, "done", worked)) {
+          dropIn(machine, pane, "ended");
+          chime(machine, pane, "done");
+        }
       }
       if (message.type === "pane-exited" && alertsOnRef.current && !pushOnRef.current && alertsRef.current.done !== "off") {
         const pane = machine.snapshot?.panes.find((p) => p.pane_id === message.pane_id);
@@ -358,7 +387,7 @@ export function App() {
       if (message.type === "session-changed" || message.type === "pane-exited") scheduleRefetch();
     };
     return () => events.close();
-  }, [locked, scheduleRefetch, dropIn]);
+  }, [locked, scheduleRefetch, dropIn, chime]);
 
   const handleServerMessage = useCallback((message: ServerMessage) => {
     if (message.type === "error" && message.code === "output_stalled") setOutputStopped(true);

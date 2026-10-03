@@ -61,6 +61,8 @@ export interface Settings {
   alertDone: DoneAlerts;
   /** while the app is on screen, the same alerts drop in from the top edge (components/Droplet.tsx) */
   alertInApp: boolean;
+  /** an open tab chimes for the same alerts (lib/alertSound.ts), heard also when a Focus silences notifications; off until chosen */
+  alertSound: boolean;
   /** one-tap replies above the composer, in order; blank ones are kept while being typed, never shown */
   quickReplies: string[];
   /** whether the quick replies show above the composer at all */
@@ -104,6 +106,7 @@ export const DEFAULT_SETTINGS: Settings = {
   alertInput: true,
   alertDone: "long",
   alertInApp: true,
+  alertSound: false,
   quickReplies: ["continue", "yes", "no", "commit and push", "retry"],
   showQuickReplies: false,
   showSuggestionChip: false,
@@ -190,6 +193,7 @@ export function sanitizeSettings(raw: unknown): Settings {
     alertInput: typeof record["alertInput"] === "boolean" ? record["alertInput"] : DEFAULT_SETTINGS.alertInput,
     alertDone: record["alertDone"] === "off" || record["alertDone"] === "long" || record["alertDone"] === "always" ? record["alertDone"] : DEFAULT_SETTINGS.alertDone,
     alertInApp: typeof record["alertInApp"] === "boolean" ? record["alertInApp"] : DEFAULT_SETTINGS.alertInApp,
+    alertSound: typeof record["alertSound"] === "boolean" ? record["alertSound"] : DEFAULT_SETTINGS.alertSound,
     // kept as typed (a trailing space is the next word being started), only bounded
     quickReplies: Array.isArray(record["quickReplies"])
       ? record["quickReplies"].filter((reply): reply is string => typeof reply === "string").slice(0, QUICK_REPLIES_MAX).map((reply) => reply.slice(0, QUICK_REPLY_MAX_CHARS))

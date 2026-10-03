@@ -21,6 +21,7 @@ import { AgentMark } from "./AgentMark.tsx";
 import { DevicesPanel } from "./DevicesPanel.tsx";
 import { PhonePanel } from "./PhonePanel.tsx";
 import { PushTestControls } from "./PushTestControls.tsx";
+import { playAlertSound, unlockAlertSound } from "../lib/alertSound.ts";
 import { HerdrUpdateControls, UpdateControls } from "./UpdateControls.tsx";
 
 export interface SettingsDialogProps {
@@ -140,6 +141,8 @@ export function SettingsDialog({ open, onClose, actions, updates, auth, onEnable
   const t = useT();
   const installPrompt = useInstallPrompt();
   const firstControlRef = useRef<HTMLButtonElement>(null);
+  // the Sound switch as last set: the preview waits for the audio, and must not play once it is off
+  const alertSoundWanted = useRef(settings.alertSound);
   // server-side: the web server updates PC bridges, so it keeps this choice
   const [pcSettings, setPcSettings] = useState<MachineSettings | null>(null);
   const [pcSettingsError, setPcSettingsError] = useState<string | null>(null);
@@ -428,6 +431,16 @@ export function SettingsDialog({ open, onClose, actions, updates, auth, onEnable
             <div className="settings-row">
               <div><span className="settings-label">{t("In the app")}</span><span className="settings-description">{t("While the app is open, these drop in from the top of the screen at once. Tap one to open its pane.")}</span></div>
               <Toggle label={t("In the app")} checked={settings.alertInApp} onChange={(alertInApp) => update({ alertInApp })} />
+            </div>
+            <div className="settings-row">
+              <div><span className="settings-label">{t("Sound")}</span><span className="settings-description">{t("While a tab of the app is open, it chimes for these alerts, also when a Focus or Do Not Disturb silences notifications.")}</span></div>
+              <Toggle label={t("Sound")} checked={settings.alertSound} onChange={(alertSound) => {
+                update({ alertSound });
+                alertSoundWanted.current = alertSound;
+                // this tap is the gesture the page needs to play audio; the chime is the preview,
+                // unless the switch went off again while the audio was getting ready
+                if (alertSound) void unlockAlertSound().then((ready) => { if (ready && alertSoundWanted.current) playAlertSound("done"); });
+              }} />
             </div>
           </section>
 

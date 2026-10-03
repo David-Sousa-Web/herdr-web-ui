@@ -21,6 +21,10 @@ between releases do not reach them. Remote-PC runtime bundles are versioned sepa
   Mocha in dark and Latte in light, laid out as Catppuccin's Zed theme does. Latte's accent and
   agent-state colors are darkened just enough to stay readable on its light surfaces.
   ([#414](https://github.com/devswha/herdr-web-ui/pull/414) by @aNNdii)
+- Settings → Alerts → Sound makes an open tab chime when a pane needs input or finishes. It is
+  the page's own audio, so it is heard when a macOS Focus or Do Not Disturb silences system
+  notifications. Off until chosen; the tab needs one tap or key before it may play.
+  ([#346](https://github.com/devswha/herdr-web-ui/pull/346) by @WOULDU-pres)
 
 ### Fixed
 - On an Android phone, dragging down at the top of a chat no longer reloads the app. The drag

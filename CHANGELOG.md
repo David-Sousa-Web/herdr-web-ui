@@ -38,6 +38,10 @@ between releases do not reach them. Remote-PC runtime bundles are versioned sepa
   keyboard included, no longer narrows the pane for a desktop showing it; switching to the terminal
   lens still fits the pane to that device. A remote PC gets this with its next bridge update.
   ([#363](https://github.com/devswha/herdr-web-ui/pull/363) by @WOULDU-pres)
+- An OmO pane that has not been asked anything yet, or has just run `/new`, shows an empty chat
+  instead of "Conversation unavailable". OmO writes its session file only with the first message,
+  so the chat found no conversation until then and offered the terminal output instead.
+  ([#360](https://github.com/devswha/herdr-web-ui/pull/360) by @nahwan-kim)
 
 ## [0.3.44] - 2026-10-03
 

@@ -13,6 +13,10 @@ between releases do not reach them. Remote-PC runtime bundles are versioned sepa
   its workspace on its second line. A workspace with several panes keeps its header. A fold made
   on a one-pane workspace in 0.3.44 no longer hides its row.
   ([#371](https://github.com/devswha/herdr-web-ui/pull/371))
+- On a desktop the terminal no longer has a bar under it holding one keyboard button. The input
+  line or direct typing is still chosen in Settings → Terminal input mode, and a touch screen
+  keeps the button in its key bar.
+  ([#372](https://github.com/devswha/herdr-web-ui/pull/372))
 
 ### Fixed
 - An open terminal no longer says "terminal ended" when herdr hands its panes to a new server,

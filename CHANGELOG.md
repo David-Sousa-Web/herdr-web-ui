@@ -18,6 +18,12 @@ between releases do not reach them. Remote-PC runtime bundles are versioned sepa
   one is used, as the Claude meter already does.
   ([#399](https://github.com/devswha/herdr-web-ui/pull/399) by @diogo7dias)
 
+### Fixed
+- On an Android phone, dragging down at the top of a chat no longer reloads the app. The drag
+  was handed on to the page, where Chrome takes it for pull-to-refresh, so reading back
+  through a conversation kept ending in a reload.
+  ([#413](https://github.com/devswha/herdr-web-ui/pull/413))
+
 ## [0.3.48] - 2026-10-04
 
 ### Added

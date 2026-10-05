@@ -441,10 +441,15 @@
   font-size: var(--fs-sm);
 }
 
+/* A cell, and a file path in it, breaks between words only, so a column is never narrower
+   than its longest word and a table without room scrolls in its wrap. The reply's
+   `overflow-wrap: anywhere` counts toward a cell's narrowest width: with it a table squeezed
+   every column down to a letter or two and never overflowed. */
 .markdown th,
 .markdown td {
   padding: var(--space-2);
   border: var(--hairline) solid var(--border);
+  overflow-wrap: normal;
   text-align: left;
 }
 
@@ -894,7 +899,8 @@
 }
 
 /* a file path in an answer: opens the file viewer, reads as the text or code it is. Its
-   dotted underline is the affordance; the accent comes under the pointer or the focus */
+   dotted underline is the affordance; the accent comes under the pointer or the focus. It
+   breaks as the text around it does: anywhere in a paragraph, between words in a table cell */
 .markdown-file {
   display: inline;
   padding: 0;
@@ -906,7 +912,7 @@
   text-decoration: underline dotted;
   text-decoration-color: var(--text-dim);
   text-underline-offset: var(--space-1);
-  overflow-wrap: anywhere;
+  overflow-wrap: inherit;
   cursor: pointer;
 }
 

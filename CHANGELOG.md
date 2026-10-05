@@ -7,6 +7,12 @@ between releases do not reach them. Remote-PC runtime bundles are versioned sepa
 
 ## [Unreleased]
 
+### Added
+- **Open here** on a held pane explicitly takes it from another web bridge or standalone
+  `herdr terminal attach`. A displaced bridge waits with the same button; it never takes the pane
+  back automatically. Available on supporting bridges, for interact connections only.
+  ([#368](https://github.com/devswha/herdr-web-ui/pull/368) by @WOULDU-pres)
+
 ### Fixed
 - On macOS, a gjc pane's chat finds its session from the terminal breadcrumb gjc leaves. Before,
   the process start time it is matched by was read as UTC, so on any other time zone every fresh

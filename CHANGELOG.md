@@ -26,6 +26,17 @@ between releases do not reach them. Remote-PC runtime bundles are versioned sepa
   between tool calls is in the answer's size and colour instead of small and dim.
   ([#457](https://github.com/devswha/herdr-web-ui/pull/457))
 
+- The chat transcript is quieter. A finished turn folds its work under one dim "Worked for" row
+  and only the running turn stays open; a block you open, fold or work inside stays as you left
+  it, and a turn that ended without an answer keeps its words in view. The line
+  above your messages is gone, answers sit closer to their prompt, and your bubble has even
+  corners (no edge in the dark amber, report and charcoal palettes). File paths and links are
+  underlined quietly and take the accent color on hover or focus. With a mouse, a code block's
+  language and copy button appear in its corner on hover, a message's time and copy sit beside
+  the bubble, and an answer has one copy button with "Plain text" beside it; touch keeps the
+  code strip and the MD and TXT buttons.
+  ([#458](https://github.com/devswha/herdr-web-ui/pull/458))
+
 ### Fixed
 - An update asked for in the first moments after the app starts, or right after another update,
   waits until the start is over. It used to stop the app in the middle of its start-up check,

@@ -475,6 +475,15 @@ One set for both themes: the card is island black wherever it shows.
   shown on hover or focus-within (no transition under reduced motion).
   Thinking renders as a folded block only when **Show thinking** is enabled.
 - Auto-follow stops when the reader scrolls up; later output raises a **New messages** pill.
+- An empty chat is greeted from the composer (`.composer-greeting`, below), only where the agent's
+  conversation was read and holds no turn. A chat still loading, one whose read failed, an agent
+  whose transcript could not be read and a pane with no recognized agent keep their own lines
+  (`Loading conversation…`, the error, the terminal-output fallback, `No conversation yet — say
+  something below`), as does an agent that is working or asking. A history read again after it
+  changed is loading, not empty. The server answers the terminal-output fallback for an agent
+  that has not written its transcript yet (a new Claude Code or Codex pane before its first
+  message), so those are not greeted; an omo session not yet written answers an empty
+  conversation and is.
 
 ### Work block (`.work-block`, `.work-row`)
 - One per assistant turn: a `▸ Worked for 7s · 1 edit · 2 commands` header (duration = next turn's
@@ -530,6 +539,22 @@ One set for both themes: the card is island black wherever it shows.
   background-task list; inside, the image strip is its own row at the top, then ONE row — attach
   control | auto-growing textarea | Send / Queue / Stop — with the controls bottom-aligned so they
   stay beside the last line as the box grows, then the status row as the card's last row.
+- Empty chat (`.composer-greeting`): one line on the composer's column, directly over it,
+  `What should <agent> do in <folder>?` in `--text-strong`, `--fs-xl`, `--fw-semibold`, centred,
+  and under it `PC · full path` in `--text-dim`, `--fs-sm`. Both wrap anywhere. While dictation's
+  recording pill is open over the composer the greeting is hidden (its box stays). No suggestion
+  chips or starter prompts. The greeting is out of the flow, so it takes no row from the terminal
+  surface. In a mouse-driven window from `769px` the composer is moved up (a transform, nothing
+  else changes size) so the greeting and the input card sit at the pane's vertical centre; a
+  phone keeps the composer docked with the greeting above it. The first message sent removes the
+  greeting and the composer is back at the bottom at once: it snaps, with no animation. Held
+  messages keep the composer docked. Once a message went out, the greeting stays away for that
+  pane until the conversation shows a turn or becomes another history: another lens, another
+  pane or a failed read does not bring it back. A stack too short for the composer and the
+  greeting leaves the greeting out (`.is-out`, hidden and `aria-hidden`) and the chat shows its
+  own empty line. While the composer is lifted, the completion menu's height is capped to the
+  room over the input card, where it scrolls. On a coarse pointer the greeting takes no touch:
+  a tap or drag on it reaches the chat under it, which puts the keyboard away.
 - The status row (`.composer-status`, `role="status"`) spans the card's full width at every window
   width, phones included, and never wraps. It draws, in `--text-dim` at `--fs-xs`: the agent mark,
   the background-task chip, the model, the reasoning level as one word with no outline (`high`),

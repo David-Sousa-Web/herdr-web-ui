@@ -8,6 +8,10 @@ between releases do not reach them. Remote-PC runtime bundles are versioned sepa
 ## [Unreleased]
 
 ### Fixed
+- In one tab of the app, the alert sound chimes once for alerts that come together from several
+  panes, instead of sounding over itself. A pane that needs input right after one that finished
+  still chimes, once the first chime ends. Two open tabs each chime, as before.
+  ([#439](https://github.com/devswha/herdr-web-ui/pull/439) by @WOULDU-pres)
 - In the terminal on macOS, Cmd+Left and Cmd+Right move to the beginning and end of the
   input line, using the same terminal keys as Ctrl+A and Ctrl+E.
   ([#437](https://github.com/devswha/herdr-web-ui/pull/437) by @WOULDU-pres)

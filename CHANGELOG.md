@@ -7,6 +7,8 @@ between releases do not reach them. Remote-PC runtime bundles are versioned sepa
 
 ## [Unreleased]
 
+## [0.3.52] - 2026-10-06
+
 ### Added
 - A PC whose connect or reconnect is refused on the bridge version check now offers
   **Update bridge and connect** in its dialog, so a PC that was never registered — no sidebar
@@ -25,6 +27,9 @@ between releases do not reach them. Remote-PC runtime bundles are versioned sepa
   ([#444](https://github.com/devswha/herdr-web-ui/pull/444) by @diogo7dias)
 
 ### Changed
+- The README answers common questions about installation, Windows support, phone access,
+  privacy and deployment, in English, Korean, Japanese and Chinese.
+  ([#495](https://github.com/devswha/herdr-web-ui/pull/495))
 - The website says what it is for in its title and description (Claude Code and Codex from your
   phone), answers seven common questions in a new FAQ section, and gives search engines a sitemap
   and structured data for the app and the FAQ.
@@ -88,6 +93,14 @@ between releases do not reach them. Remote-PC runtime bundles are versioned sepa
   be picked for this session from the chat. Before, the chat showed nothing while the terminal
   waited on the list.
   ([#503](https://github.com/devswha/herdr-web-ui/pull/503))
+
+### Maintenance
+- Browser regressions run on macOS as well as Linux, with portable fixtures and bounded
+  readiness checks. ([#499](https://github.com/devswha/herdr-web-ui/pull/499) by @kilhyeonjun)
+- Isolated test panes start at a shell prompt even where zsh includes its new-user wizard.
+  ([#502](https://github.com/devswha/herdr-web-ui/pull/502))
+- The website serves the Google Search Console ownership verification file.
+  ([#505](https://github.com/devswha/herdr-web-ui/pull/505))
 
 ## [0.3.51] - 2026-10-06
 
@@ -2078,7 +2091,8 @@ First public version.
 - Installable PWA, a mobile key bar, web push alerts and optional token auth.
 - Distribution as a herdr plugin.
 
-[Unreleased]: https://github.com/devswha/herdr-web-ui/compare/v0.3.51...HEAD
+[Unreleased]: https://github.com/devswha/herdr-web-ui/compare/v0.3.52...HEAD
+[0.3.52]: https://github.com/devswha/herdr-web-ui/compare/v0.3.51...v0.3.52
 [0.3.51]: https://github.com/devswha/herdr-web-ui/compare/v0.3.50...v0.3.51
 [0.3.50]: https://github.com/devswha/herdr-web-ui/compare/v0.3.49...v0.3.50
 [0.3.49]: https://github.com/devswha/herdr-web-ui/compare/v0.3.48...v0.3.49

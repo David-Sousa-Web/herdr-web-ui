@@ -1,0 +1,32 @@
+[
+  {
+    "agent": "claude",
+    "width": 1280,
+    "sent": [
+      "session: Haiku 4.5"
+    ]
+  },
+  {
+    "agent": "codex",
+    "width": 1280,
+    "sent": [
+      "opened: GPT-6-Luna",
+      "session: GPT-6-Luna High"
+    ]
+  },
+  {
+    "agent": "claude",
+    "width": 390,
+    "sent": [
+      "session: Haiku 4.5"
+    ]
+  },
+  {
+    "agent": "codex",
+    "width": 390,
+    "sent": [
+      "opened: GPT-6-Luna",
+      "session: GPT-6-Luna High"
+    ]
+  }
+]

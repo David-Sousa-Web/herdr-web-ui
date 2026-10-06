@@ -8,6 +8,10 @@ between releases do not reach them. Remote-PC runtime bundles are versioned sepa
 ## [Unreleased]
 
 ### Added
+- A PC whose connect or reconnect is refused on the bridge version check now offers
+  **Update bridge and connect** in its dialog, so a PC that was never registered — no sidebar
+  row, no saved key — can be updated and connected in one go, through the same approval list
+  a first install shows. ([#506](https://github.com/devswha/herdr-web-ui/pull/506) by @suho-han)
 - A lilac palette in Settings → Appearance → Colors: one quiet lavender with indigo ink and accent
   in light, and the same hue at night in dark.
   ([#443](https://github.com/devswha/herdr-web-ui/pull/443) by @WOULDU-pres)

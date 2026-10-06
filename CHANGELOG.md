@@ -18,6 +18,12 @@ between releases do not reach them. Remote-PC runtime bundles are versioned sepa
   ([#444](https://github.com/devswha/herdr-web-ui/pull/444) by @diogo7dias)
 
 ### Changed
+- On macOS a Codex pane's chat costs the server about a sixth of what it did on each poll (a
+  median of 16 ms instead of 103 ms, measured on two live Codex panes). The store a Codex process
+  writes to is remembered for its pid and arguments instead of being read with `ps` every 2 s,
+  and the rollout it has open is found with one `lsof` run for the pane's processes (a wrapper
+  and the binary are two) that skips the stat calls a name does not need.
+  ([#491](https://github.com/devswha/herdr-web-ui/pull/491) by @kilhyeonjun)
 - The app's startup script is a fifth smaller (408 kB to 331 kB gzipped, and 48 kB to 39 kB of
   CSS): KaTeX, which draws math in the chat, loads with the first reply that has an expression.
   Until it arrives, that expression shows in its source form, as it did when KaTeX could not read it.

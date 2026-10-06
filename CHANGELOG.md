@@ -67,6 +67,13 @@ between releases do not reach them. Remote-PC runtime bundles are versioned sepa
   Claude do in …?"), as an OmO pane already did. Before, until the first message the chat
   showed the terminal's text or an empty line instead, so a new workspace or worktree never
   greeted you. ([#500](https://github.com/devswha/herdr-web-ui/pull/500))
+- `/model` sent from a Claude Code pane's chat shows Claude's model list as a card: tap a model,
+  or type its number, and that pane's session switches to it. Before, the chat showed nothing
+  while the terminal waited on the list, so a model could only be picked there. The card picks
+  for this session only (Claude's `s` key). Saving a model as the default for new sessions stays
+  in the terminal, where Enter on the list does it. The card offers the rows Claude draws (ten of
+  a longer list, fewer in a short pane) and says how many more the terminal lists.
+  ([#501](https://github.com/devswha/herdr-web-ui/pull/501))
 
 ## [0.3.51] - 2026-10-06
 

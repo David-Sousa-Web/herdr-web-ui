@@ -8,6 +8,9 @@ between releases do not reach them. Remote-PC runtime bundles are versioned sepa
 ## [Unreleased]
 
 ### Added
+- A lilac palette in Settings → Appearance → Colors: one quiet lavender with indigo ink and accent
+  in light, and the same hue at night in dark.
+  ([#443](https://github.com/devswha/herdr-web-ui/pull/443) by @WOULDU-pres)
 - New workspace's **Browse** filters the loaded folders in the current directory as you type.
   Navigation clears the filter, and a truncated listing says when search covers only the first
   500 folders. ([#430](https://github.com/devswha/herdr-web-ui/pull/430) by @suho-han)

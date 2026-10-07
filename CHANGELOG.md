@@ -7,8 +7,15 @@ between releases do not reach them. Remote-PC runtime bundles are versioned sepa
 
 ## [Unreleased]
 
+### Fixed
+- Secret input and the Codex follow-up fallback validate the live screen, so a password
+  prompt or collapsed question queue in scrollback cannot send input into the current program.
+  ([#566](https://github.com/devswha/herdr-web-ui/pull/566))
+
+## [0.4.0] - 2026-10-08
+
 ### Added
-- An update tells what it brings before it is installed. **Settings → Updates** shows
+- An update tells what it brings before it is installed. **Settings → About** shows
   **What's new** under the version on offer: the changelog of every release the update installs,
   newest first, read from the release itself. The line under the header has a **What's new**
   button that opens Settings there. The notes come from the version that is running, so they
@@ -16,7 +23,7 @@ between releases do not reach them. Remote-PC runtime bundles are versioned sepa
   ([#535](https://github.com/devswha/herdr-web-ui/pull/535))
 - An update also tells what it brought once it is installed. After the reload, the line under
   the header says which version now runs, with **What's new** and **Dismiss**, for a week or
-  until it is closed on that device, and **Settings → Updates** keeps the notes under
+  until it is closed on that device, and **Settings → About** keeps the notes under
   **What the last update brought**. These come from the new version itself, so they appear
   with the first update to a version that has them.
   ([#560](https://github.com/devswha/herdr-web-ui/pull/560))
@@ -63,6 +70,17 @@ between releases do not reach them. Remote-PC runtime bundles are versioned sepa
   gives a program by itself, and with nothing held the notice had only a dash to show. Text
   past the 1,024 characters it holds is now told as left out, where it only raised that count.
   ([#561](https://github.com/devswha/herdr-web-ui/pull/561))
+- Settings shows one page at a time. A list of pages (Appearance, Chat, Terminal, Alerts, Voice
+  input, Subscription usage, Shortcuts, Phone & devices, Remote PCs, About) stays beside the open
+  page; on a phone the list comes first and a page opens from it. Each page groups its settings
+  in cards, one control at the end of each row, and a phone no longer scrolls through every
+  setting to reach the last. What moved: the terminal's font, wheel speed, input mode and
+  **Key bar** from Appearance to **Terminal**; Composer and Quick replies into **Chat**; Phone,
+  Install and Devices into **Phone & devices**; Updates and herdr into **About**. Colors and
+  Language are menus now, and Language lists English, 简体中文, 日本語, 한국어 in that order after
+  System. Every setting keeps its value. The Back button of a phone or a browser
+  steps out of Settings (the key bar editor, the page, then the dialog) instead of leaving the app.
+  ([#562](https://github.com/devswha/herdr-web-ui/pull/562))
 - The mic button shows in a desktop's chat without being turned on. **Settings → Voice input →
   Microphone button** is now **Auto**, **On** or **Off**. Auto, the default, puts the mic in the
   chat's message box on a desktop, and only where dictation can work: over HTTPS, with an OpenAI
@@ -73,7 +91,7 @@ between releases do not reach them. Remote-PC runtime bundles are versioned sepa
 - On a phone, the sidebar's **Agents** list starts folded, leaving the drawer to the workspaces.
   A tap on its heading opens it. ([#559](https://github.com/devswha/herdr-web-ui/pull/559))
 - On a touch screen, the chip above the message box that takes Claude Code's suggested next
-  prompt is on again unless **Settings → Composer → Suggestion chip** turns it off.
+  prompt is on again unless **Settings → Chat → Suggestion chip** turns it off.
   ([#559](https://github.com/devswha/herdr-web-ui/pull/559))
 - Every agent's chat uses one compact Send/Stop button on desktop and phones. Sending during
   work schedules a next-turn message; its explicit ↑ Send now action delivers it immediately,
@@ -89,13 +107,12 @@ between releases do not reach them. Remote-PC runtime bundles are versioned sepa
   already did: with a mouse it is typed at the transcript's size, and on a touch screen it
   grows with a size above 16px (it stays at 16px or more, so iOS still does not zoom).
   ([#515](https://github.com/devswha/herdr-web-ui/pull/515) by @phirschybar)
-
 - Workspace rows no longer reserve a left column for a reorder grip. Rows can still be dragged
   directly or moved with Alt+Up/Down while focused.
   ([#521](https://github.com/devswha/herdr-web-ui/pull/521))
 - The sidebar follows herdr's separate workspace and agent lists, drawn on one quiet grid. Every
   row leads with the coding agent that runs in it (its mark, or a terminal for a shell and a
-  branch for a worktree without an agent) and ends in one status column, drawn by urgency (a filled red bubble waits for an answer, a
+  branch for a worktree without an agent) and ends in one status column, drawn by urgency (a red question mark waits for an answer, a
   green dot has finished and was not looked at yet, a dim arc runs), which stays empty while
   an agent is ready. Agent rows name the agent, then the PC when there are several, the workspace
   and the tab. Sections are parted by space instead of rules, a row's menu button takes no room
@@ -119,7 +136,6 @@ between releases do not reach them. Remote-PC runtime bundles are versioned sepa
   from herdr's worktree API and keeping custom workspace names beside them. Creating or opening
   a worktree expands its group. The browser demo supports these worktree actions with fictional
   checkouts too. ([#521](https://github.com/devswha/herdr-web-ui/pull/521))
-
 - A linked worktree's row in the sidebar is titled by its workspace name, the one its owner gave it
   or the one herdr made from the branch, instead of the branch; the branch follows in dim text
   where the name does not already say it, and in the row's tooltip and menu. The sidebar's mark
@@ -2265,7 +2281,8 @@ First public version.
 - Installable PWA, a mobile key bar, web push alerts and optional token auth.
 - Distribution as a herdr plugin.
 
-[Unreleased]: https://github.com/devswha/herdr-web-ui/compare/v0.3.52...HEAD
+[Unreleased]: https://github.com/devswha/herdr-web-ui/compare/v0.4.0...HEAD
+[0.4.0]: https://github.com/devswha/herdr-web-ui/compare/v0.3.52...v0.4.0
 [0.3.52]: https://github.com/devswha/herdr-web-ui/compare/v0.3.51...v0.3.52
 [0.3.51]: https://github.com/devswha/herdr-web-ui/compare/v0.3.50...v0.3.51
 [0.3.50]: https://github.com/devswha/herdr-web-ui/compare/v0.3.49...v0.3.50

@@ -8,7 +8,7 @@ between releases do not reach them. Remote-PC runtime bundles are versioned sepa
 ## [Unreleased]
 
 ### Added
-- An update tells what it brings before it is installed. **Settings → Updates** shows
+- An update tells what it brings before it is installed. **Settings → About** shows
   **What's new** under the version on offer: the changelog of every release the update installs,
   newest first, read from the release itself. The line under the header has a **What's new**
   button that opens Settings there. The notes come from the version that is running, so they
@@ -38,6 +38,14 @@ between releases do not reach them. Remote-PC runtime bundles are versioned sepa
   and existing Alt combinations remain intact. ([#508](https://github.com/devswha/herdr-web-ui/pull/508))
 
 ### Changed
+- Settings shows one page at a time. A list of pages (Appearance, Chat, Terminal, Alerts, Voice
+  input, Subscription usage, Shortcuts, Phone & devices, Remote PCs, About) stays beside the open
+  page; on a phone the list comes first and a page opens from it. Each page groups its settings
+  in cards, one control at the end of each row, and a phone no longer scrolls through every
+  setting to reach the last. What moved: the terminal's font, wheel speed, input mode and
+  **Key bar** from Appearance to **Terminal**; Composer and Quick replies into **Chat**; Phone,
+  Install and Devices into **Phone & devices**; Updates and herdr into **About**. Colors and
+  Language are menus now. Every setting keeps its value.
 - Every agent's chat uses one compact Send/Stop button on desktop and phones. Sending during
   work schedules a next-turn message; its explicit ↑ Send now action delivers it immediately,
   or X discards it. The bridge claims each message once and pauses automatic delivery when

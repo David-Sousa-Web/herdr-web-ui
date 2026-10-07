@@ -8,6 +8,7 @@ import { chromium } from "playwright-core";
 import { runCommand } from "../server/updater.ts";
 import { workspaceCreate, workspaceClose, sessionSnapshot } from "../server/herdr/client.ts";
 import type { UpdateStatus } from "../shared/update.ts";
+import { openSettingsPage } from "./settings-page.ts";
 
 const source = resolve(import.meta.dir, "..");
 const temp = mkdtempSync(join(tmpdir(), "herdr-update-browser-"));
@@ -66,6 +67,7 @@ try {
   const draft = page.getByRole("textbox", { name: "Message", exact: true });
   await draft.fill("Unsent draft preserved across update");
   await page.locator(".sidebar-footer").getByRole("button", { name: "Settings", exact: true }).click();
+  await openSettingsPage(page, "About");
   await page.getByRole("heading", { name: "Updates", exact: true }).scrollIntoViewIfNeeded();
 
   writeFileSync(join(upstream, "qa-revision.txt"), "second build\n");
@@ -85,7 +87,7 @@ try {
   assert.equal(await notes.getByText("Unreleased").count(), 0);
   assert.ok(await installButton.isVisible());
   await page.screenshot({ path: join(evidence, "available-desktop.png"), fullPage: true });
-  // the line under the header points at them: its button opens Settings on Updates, the last section
+  // the line under the header points at them: its button opens Settings on Updates, on the About page
   await page.getByRole("button", { name: "Close settings", exact: true }).click();
   await page.locator(".update-notice").getByRole("button", { name: "What's new", exact: true }).click();
   await until(() => notes.evaluate(element => {
@@ -108,6 +110,7 @@ try {
   // A reload is explicit. The new frontend's build revision must match the server.
   await page.locator(".update-notice").getByRole("button", { name: "Reload app" }).click();
   await page.locator(".sidebar-footer").getByRole("button", { name: "Settings", exact: true }).click();
+  await openSettingsPage(page, "About");
   await page.getByRole("heading", { name: "Updates", exact: true }).scrollIntoViewIfNeeded();
   await page.getByText(new RegExp(`^Running (v[0-9.]+ \\()?${next.slice(0, 12)}\\)?$`)).waitFor();
   assert.equal(await page.locator(".update-notice").count(), 0);

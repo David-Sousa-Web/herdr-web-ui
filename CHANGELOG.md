@@ -31,6 +31,10 @@ between releases do not reach them. Remote-PC runtime bundles are versioned sepa
   was still being sent no longer reaches the pane once you have left it, or left it and opened it
   again, before the text's turn came.
   ([#576](https://github.com/devswha/herdr-web-ui/pull/576))
+- On Windows, a Codex pane shows its chat when Codex stored its paths with the `\\?\` prefix, as
+  it does for a canonical Windows path (`\\?\D:\work` for `D:\work`). Before, the chat said
+  **Conversation unavailable**: the session's file seemed to lie outside Codex's store, and none of
+  the threads matched the pane's directory as herdr reports it.
 
 ## [0.4.0] - 2026-10-08
 

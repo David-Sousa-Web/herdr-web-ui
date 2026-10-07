@@ -18,6 +18,7 @@ between releases do not reach them. Remote-PC runtime bundles are versioned sepa
   the `~/.claude-*` directories beside it that holds the Claude process's own record, checked
   against the time the process started. Claude Code processes reported as `claude.exe` are
   recognized too.
+  ([#563](https://github.com/devswha/herdr-web-ui/pull/563) by @David-Sousa-Web)
 
 ## [0.4.0] - 2026-10-08
 

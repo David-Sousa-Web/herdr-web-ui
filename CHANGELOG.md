@@ -11,6 +11,13 @@ between releases do not reach them. Remote-PC runtime bundles are versioned sepa
 - Secret input and the Codex follow-up fallback validate the live screen, so a password
   prompt or collapsed question queue in scrollback cannot send input into the current program.
   ([#566](https://github.com/devswha/herdr-web-ui/pull/566))
+- On Windows, a Claude Code pane started with its own `CLAUDE_CONFIG_DIR`, such as a second
+  account's `~/.claude-*` directory, shows its chat. Before, the pane fell back to `~/.claude`, so
+  the chat said **Conversation unavailable** and only the terminal worked. Windows does not let
+  the server read another process's environment, so the store is the one among `~/.claude` and
+  the `~/.claude-*` directories beside it that holds the Claude process's own record, checked
+  against the time the process started. Claude Code processes reported as `claude.exe` are
+  recognized too.
 
 ## [0.4.0] - 2026-10-08
 
@@ -189,13 +196,6 @@ between releases do not reach them. Remote-PC runtime bundles are versioned sepa
   that claims the same headers still gains nothing, and a configured token is still required of
   everything but a paired device.
   ([#525](https://github.com/devswha/herdr-web-ui/pull/525) by @jetmobsol)
-- On Windows, a Claude Code pane started with its own `CLAUDE_CONFIG_DIR`, such as a second
-  account's `~/.claude-*` directory, shows its chat. Before, the pane fell back to `~/.claude`, so
-  the chat said **Conversation unavailable** and only the terminal worked. Windows does not let
-  the server read another process's environment, so the store is the one among `~/.claude` and
-  the `~/.claude-*` directories beside it that holds the Claude process's own record, checked
-  against the time the process started. Claude Code processes reported as `claude.exe` are
-  recognized too.
 
 ## [0.3.52] - 2026-10-06
 

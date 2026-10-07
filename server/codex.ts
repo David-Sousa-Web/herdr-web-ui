@@ -435,12 +435,14 @@ function rolloutHeader(path: string): RecordValue | null {
 /**
  * A Windows path without the `\\?\` prefix that Codex on Windows stores in `threads` (`cwd`,
  * `rollout_path`), as Rust's canonical paths carry it: `\\?\D:\x` is `D:\x` and
- * `\\?\UNC\host\share` is `\\host\share` (#518). Any other path is returned as it is.
+ * `\\?\UNC\host\share` is `\\host\share` (#518). Any other path, `\\?\Volume{…}\` included, is
+ * returned as it is: without its prefix it would read as a relative path.
  */
 export function withoutVerbatimPrefix(path: string): string {
   if (!path.startsWith("\\\\?\\")) return path;
   const rest = path.slice(4);
-  return /^UNC\\/i.test(rest) ? `\\\\${rest.slice(4)}` : rest;
+  if (/^UNC\\/i.test(rest)) return `\\\\${rest.slice(4)}`;
+  return /^[A-Za-z]:\\/.test(rest) ? rest : path;
 }
 
 /** The `cwd` values Codex may have stored for a directory: as given, and on Windows also with `\\?\`. */

@@ -368,7 +368,7 @@ describe("Codex rollout resolution", () => {
   it("reads the Windows paths Codex stores with the \\\\?\\ prefix as the plain ones herdr reports (#518)", () => {
     expect(withoutVerbatimPrefix("\\\\?\\D:\\work\\app")).toBe("D:\\work\\app");
     expect(withoutVerbatimPrefix("\\\\?\\UNC\\host\\share\\app")).toBe("\\\\host\\share\\app");
-    for (const path of ["D:\\work\\app", "\\\\host\\share\\app", "/home/user/app", "relative\\\\?\\app", ""]) {
+    for (const path of ["D:\\work\\app", "\\\\host\\share\\app", "/home/user/app", "relative\\\\?\\app", "", "\\\\?\\Volume{0a1b}\\codex", "\\\\?\\GLOBALROOT\\Device\\x", "\\\\?\\out.jsonl"]) {
       expect(withoutVerbatimPrefix(path)).toBe(path);
     }
     expect(storedCwds("D:\\work\\app")).toEqual(["D:\\work\\app", "\\\\?\\D:\\work\\app"]);

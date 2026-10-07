@@ -117,7 +117,8 @@ it.skipIf(!onWindows)("reads a Codex rollout path stored with the \\\\?\\ prefix
     expect(codexRolloutPath(`\\\\?\\${path}`, home)).toBe(path);
     expect(codexRolloutPath(path, home)).toBe(path);
     expect(codexRolloutPath(`\\\\?\\${outside}`, home)).toBeNull();
-    expect(codexRolloutPath(`\\\\?\\${join(home, "sessions", "..", "..", "other.jsonl")}`, home)).toBeNull();
+    // raw `..` segments (join would fold them) that climb from the store to `outside`, which exists
+    expect(codexRolloutPath(`\\\\?\\${home}\\sessions\\..\\..\\..\\other.jsonl`, home)).toBeNull();
   } finally { rmSync(root, { recursive: true, force: true }); }
 });
 

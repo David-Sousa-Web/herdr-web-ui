@@ -35,6 +35,7 @@ between releases do not reach them. Remote-PC runtime bundles are versioned sepa
   it does for a canonical Windows path (`\\?\D:\work` for `D:\work`). Before, the chat said
   **Conversation unavailable**: the session's file seemed to lie outside Codex's store, and none of
   the threads matched the pane's directory as herdr reports it.
+  ([#582](https://github.com/devswha/herdr-web-ui/pull/582) by @David-Sousa-Web)
 
 ## [0.4.0] - 2026-10-08
 

@@ -45,7 +45,8 @@ between releases do not reach them. Remote-PC runtime bundles are versioned sepa
   setting to reach the last. What moved: the terminal's font, wheel speed, input mode and
   **Key bar** from Appearance to **Terminal**; Composer and Quick replies into **Chat**; Phone,
   Install and Devices into **Phone & devices**; Updates and herdr into **About**. Colors and
-  Language are menus now. Every setting keeps its value.
+  Language are menus now. Every setting keeps its value. The Back button of a phone or a browser
+  steps out of Settings (the key bar editor, the page, then the dialog) instead of leaving the app.
 - Every agent's chat uses one compact Send/Stop button on desktop and phones. Sending during
   work schedules a next-turn message; its explicit ↑ Send now action delivers it immediately,
   or X discards it. The bridge claims each message once and pauses automatic delivery when

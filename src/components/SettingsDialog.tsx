@@ -9,6 +9,7 @@ import { SHORTCUTS, formatKeys, shortcutKeys, shortcutConflict } from "../lib/sh
 import { CHAT_FONT_MAX, CHAT_FONT_MIN, CHAT_WIDTHS, chatFontSize, DEFAULT_SETTINGS, QUICK_REPLIES_MAX, QUICK_REPLY_MAX_CHARS, TERMINAL_FONT_MAX, TERMINAL_FONT_MIN, TERMINAL_WHEEL_SPEED_MAX, TERMINAL_WHEEL_SPEED_MIN, useSettings, forgetPaneViews } from "../lib/settings.ts";
 import { LANGUAGE_NAMES, LANGUAGE_SETTINGS, useT } from "../lib/i18n.ts";
 import { KeyBarSettings } from "./KeyBarSettings.tsx";
+import { onSettingsHistory, recordSettings, settingsEntry, settingsLevels, type SettingsLevel } from "../lib/settingsHistory.ts";
 import { Segmented, SettingsGroup, SettingsRow, Stepper, Toggle } from "./SettingsControls.tsx";
 import { FONT_FAMILY_MAX_CHARS, sanitizeFontFamily } from "../lib/fontFamily.ts";
 import type { UpdatesModel } from "../lib/updates.ts";
@@ -116,6 +117,13 @@ function useNarrow(): boolean {
     return () => media.removeEventListener("change", refresh);
   }, []);
   return narrow;
+}
+
+/** What a Settings entry of the history shows, when it names a page this version has. */
+function shownBy(entry: SettingsLevel | null): { page: SettingsPage | null; keyBar: boolean } | null {
+  if (entry === null) return null;
+  const page = PAGES.find(({ id }) => id === entry.page)?.id ?? null;
+  return page === null && entry.page !== null ? null : { page, keyBar: entry.keyBar && page === "terminal" };
 }
 
 function AppearancePage() {
@@ -546,10 +554,21 @@ export function SettingsDialog(props: SettingsDialogProps) {
 function OpenSettingsDialog({ section = null, onClose, actions, updates, auth, herdrVersion, onEnableNotifications }: SettingsDialogProps) {
   const t = useT();
   const narrow = useNarrow();
+  // opened by Forward, the dialog shows what that entry of the history showed
+  const [restored] = useState(() => shownBy(settingsEntry(window.history.state)));
   // a phone opens on the list of pages; a wider dialog shows the list beside the first page
-  const [chosen, setChosen] = useState<SettingsPage | null>(section === "updates" ? "about" : null);
+  const [chosen, setChosen] = useState<SettingsPage | null>(restored ? restored.page : section === "updates" ? "about" : null);
   const page = chosen ?? (narrow ? null : PAGES[0]!.id);
-  const [keyBarOpen, setKeyBarOpen] = useState(false);
+  const [keyBarOpen, setKeyBarOpen] = useState(restored?.keyBar ?? false);
+  // every step in is an entry of the history, so the system Back button takes one step out
+  // (lib/settingsHistory.ts); the Back control, the X and Escape take the same entries off
+  useEffect(() => { recordSettings(settingsLevels(narrow, page, keyBarOpen)); }, [narrow, page, keyBarOpen]);
+  useEffect(() => onSettingsHistory((entry, own) => {
+    const view = own ? null : shownBy(entry);
+    if (view === null) return;
+    setChosen(view.page);
+    setKeyBarOpen(view.keyBar);
+  }), []);
   const keyBarButtonRef = useRef<HTMLButtonElement>(null);
   const backRef = useRef<HTMLButtonElement>(null);
   const tabsRef = useRef<HTMLDivElement>(null);

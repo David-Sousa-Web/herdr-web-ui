@@ -928,6 +928,11 @@ One set for both themes: the card is island black wherever it shows.
   replaces it under a Back to settings control. The dialog's accessible name stays **Settings**
   on every page; the list is a vertical `tablist` with one Tab stop, and the arrows walk it
   (beside an open page they turn the page too). Escape closes the dialog from any page.
+- Each step into Settings is an entry of the browser's history (`lib/settingsHistory.ts`): the
+  dialog, the page a phone opens from its list, the key bar editor. The system Back button (and
+  an edge swipe) takes one step out and never leaves the app from inside Settings; the Back
+  control, the X, Escape and the scrim take the same entries off. Beside the list, turning pages
+  replaces the one entry. A reload steps out of the entries it finds; Forward reopens the page.
 - Pages, in order: **Appearance** (theme, colors, density, language, sidebar rows), **Chat**
   (panes open in, show thinking, chat width, chat font size and family; then **Composer**: Enter
   sends, suggestion chip; then **Quick replies**), **Terminal** (font size and family, wheel

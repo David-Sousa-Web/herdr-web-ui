@@ -8,10 +8,10 @@ import { chromium } from "playwright-core";
 import { createServer } from "../server/index.ts";
 import { herdrRpc, sessionSnapshot, workspaceCreate, workspaceClose } from "../server/herdr/client.ts";
 import type { WorkspaceCreated, WorktreeOpened } from "../shared/protocol.ts";
+import type { Machine } from "../shared/machines.ts";
 import { alertsOffMarked, alertsState, runMoreItem } from "./header-more.ts";
 import { checkPushSettings } from "./push-settings-regression.ts";
 import { checkWakeLock } from "./wake-lock-regression.ts";
-import { checkNeedsInput } from "./needs-input-regression.ts";
 import { checkSecretInput } from "./secret-input-regression.ts";
 import { checkTerminalCopy } from "./terminal-copy-regression.ts";
 import { checkUsageMeters } from "./usage-regression.ts";
@@ -80,6 +80,9 @@ try {
     for (const id of ids) localStorage.setItem(`herdr-web-ui:view:${id}`, "chat");
   }, panes);
   const page = await context.newPage();
+  const workspaceGroup = (workspaceId: string) => page.locator(`.workspace-group[data-workspace="${workspaceId}"]`);
+  const workspaceHeader = (workspaceId: string) => workspaceGroup(workspaceId).locator(":scope > .workspace-header");
+  const agentRow = (paneId: string) => page.locator(`.agents-sidebar .agent-item[data-machine="local"][data-pane="${paneId}"]`);
   let holdSubmitResult = false;
   let releaseSubmitResult: (() => void) | null = null;
   await page.routeWebSocket(/\/ws(?:\?|$)/, (socket) => {
@@ -116,11 +119,24 @@ try {
   await until(() => painted.has(paneA), "owned pane paint");
   const composer = page.getByRole("textbox", { name: "Message", exact: true });
   await composer.waitFor();
+  assert.equal(await workspaceHeader(workspaces[0]!).locator(".workspace-name").textContent(), "herdr-web-ui-test-browser-a",
+    "Spaces names the workspace rather than its current pane");
+  assert.equal(await workspaceGroup(workspaces[0]!).locator(".pane-select").count(), 1, "a workspace has one representative selector");
+  assert.equal(await page.locator(".workspace-contents, .sidebar-tab-heading, .sidebar-pane-item").count(), 0,
+    "Spaces has no tab or pane tree");
+  assert.equal(await agentRow(paneA).count(), 0, "a plain shell is absent from Agents");
+  assert.equal(await agentRow(paneB).count(), 0, "another plain shell is absent from Agents");
 
   // Hold a real machines response, then deliver a newer status through herdr/SSE.
   const badge = page.locator(".pane-item.is-selected .badge");
   await herdrRpc("pane.report_agent", { pane_id: paneA, source: "manual", agent: "claude", state: "blocked" });
   await until(async () => await badge.getAttribute("data-status") === "blocked", "blocked baseline");
+  await agentRow(paneA).locator('.badge[data-status="blocked"]').waitFor();
+  assert.equal(await agentRow(paneA).locator('.agent-select[aria-current="true"]').count(), 1,
+    "Agents independently marks its selected pane");
+  assert.equal(await agentRow(paneA).locator('.sidebar-status[role="status"]').count(), 1,
+    "Agents uses a compact accessible status");
+  assert.ok((await agentRow(paneA).locator(".agent-title").textContent())?.trim(), "an agent has a task title");
   let releasePoll!: () => void;
   const heldPoll = new Promise<void>((resolve) => { releasePoll = resolve; });
   releases.push(releasePoll);
@@ -139,17 +155,69 @@ try {
   await until(() => pollCaptured, "held machines snapshot");
   await herdrRpc("pane.report_agent", { pane_id: paneA, source: "manual", agent: "claude", state: "working" });
   await until(async () => await badge.getAttribute("data-status") === "working", "working event before poll");
+  await agentRow(paneA).locator('.badge[data-status="working"]').waitFor();
   releasePoll();
   await until(() => pollFinished, "stale machines response released");
   await page.waitForTimeout(300);
   assert.equal(await badge.getAttribute("data-status"), "working", "stale poll must not revert RUN to INPUT");
+  assert.equal(await agentRow(paneA).locator(".badge").getAttribute("data-status"), "working",
+    "a stale poll must not revert the separate Agents list either");
   if (process.env.UI_EVIDENCE_DIR) {
     mkdirSync(process.env.UI_EVIDENCE_DIR, { recursive: true });
     await page.screenshot({ path: join(process.env.UI_EVIDENCE_DIR, "pane-status-poll.png") });
   }
   await page.unroute("**/api/machines");
   await herdrRpc("pane.report_agent", { pane_id: paneA, source: "manual", agent: "claude", state: "idle" });
+  const settledAgentStatus = (await sessionSnapshot()).panes.find((pane) => pane.pane_id === paneA)?.agent_status;
+  assert.ok(settledAgentStatus === "idle" || settledAgentStatus === "done", "herdr settles the completed turn");
+  await agentRow(paneA).locator(`.badge[data-status="${settledAgentStatus}"]`).waitFor();
   console.log("PASS delayed machines poll preserves newer streamed pane status");
+
+  // Agents is global to the sidebar, so collapsing a PC's Spaces does not hide
+  // its reported agents or prevent explicit pane selection from that list.
+  await herdrRpc("pane.report_agent", { pane_id: paneB, source: "manual", agent: "codex", state: "idle" });
+  await agentRow(paneB).waitFor();
+  const machineToggle = page.locator(".machine-group .machine-toggle");
+  // the PC's fold is the caret beside its +
+  assert.equal(await page.locator(".machine-group .machine-toggle + .machine-new").count(), 1);
+  await machineToggle.click();
+  await workspaceGroup(workspaces[0]!).waitFor({ state: "detached" });
+  assert.equal(await agentRow(paneA).isVisible(), true, "PC folding leaves Agents visible");
+  await agentRow(paneB).locator(".agent-select").click();
+  await agentRow(paneB).locator('.agent-select[aria-current="true"]').waitFor();
+  assert.deepEqual(await page.evaluate(() => JSON.parse(sessionStorage.getItem("herdr-web-ui:selection") ?? "null")),
+    { machine_id: "local", pane_id: paneB }, "Agent selection retains its machine and pane target");
+  assert.equal(await machineToggle.getAttribute("aria-expanded"), "false", "Agent selection preserves the user's PC fold");
+  painted.delete(paneA);
+  await agentRow(paneA).locator(".agent-select").click();
+  await agentRow(paneA).locator('.agent-select[aria-current="true"]').waitFor();
+  await until(() => painted.has(paneA), "returning from Agents paints the current pane");
+  await machineToggle.click();
+  await workspaceHeader(workspaces[0]!).locator('.workspace-select[aria-current="true"]').waitFor();
+
+  // Reuse the real API roster as an offline cache in an isolated context. Its
+  // native disabled buttons must leave selection unchanged when clicked.
+  const cachedRoster = await (await context.request.get(`${origin}/api/machines`)).json() as { machines: Machine[] };
+  const offlineMachines = cachedRoster.machines.map((machine) => ({ ...machine, state: "disconnected" as const }));
+  const offlineContext = await browser.newContext({ viewport: { width: 1280, height: 800 } });
+  try {
+    await offlineContext.addInitScript(() => localStorage.setItem("herdr-web-ui:settings", JSON.stringify({ language: "en", alertsOn: false })));
+    await offlineContext.route("**/api/machines", (route) => route.fulfill({ json: { machines: offlineMachines } }));
+    await offlineContext.route("**/api/machines/events", (route) => route.fulfill({
+      contentType: "text/event-stream", body: `retry: 60000\ndata: ${JSON.stringify({ type: "machines", machines: offlineMachines })}\n\n`,
+    }));
+    await offlineContext.routeWebSocket(/\/ws(?:\?|$)/, (socket) => socket.close({ code: 1000, reason: "Offline cached roster" }));
+    const offlinePage = await offlineContext.newPage();
+    await offlinePage.goto(`${origin}/?pane=${encodeURIComponent(paneA)}`);
+    const offlineAgent = offlinePage.locator(`.agents-sidebar .agent-item[data-machine="local"][data-pane="${paneB}"] .agent-select`);
+    await offlineAgent.waitFor();
+    assert.equal(await offlineAgent.isDisabled(), true, "a cached offline agent cannot select its pane");
+    const selectionBefore = await offlinePage.evaluate(() => sessionStorage.getItem("herdr-web-ui:selection"));
+    await offlineAgent.dispatchEvent("click");
+    assert.equal(await offlinePage.evaluate(() => sessionStorage.getItem("herdr-web-ui:selection")), selectionBefore,
+      "offline Agent clicks leave the current selection unchanged");
+  } finally { await offlineContext.close(); }
+  console.log("PASS Agents excludes shells, survives PC folds, selects its machine target and disables offline rows");
 
   // Use a real browser paste: keydown must not send Ctrl+V (0x16) to the agent,
   // where it can trigger image paste against the server's unrelated clipboard.
@@ -284,6 +352,54 @@ try {
   await until(async () => await page.evaluate(() => document.activeElement?.matches(".sidebar-toggle, .drawer-toggle") ?? false), "focus returns to the workspace-list toggle after Add PC closes");
   console.log("PASS Add PC opens from Settings, and the sidebar has no top bar");
 
+  // the sidebar's right edge resizes it: its own top row in the header follows, the width is
+  // kept on this device, the arrows move it from the keyboard and a double-click forgets it
+  const sidebarWidths = () => page.evaluate(() => ({
+    sidebar: Math.round(document.querySelector(".sidebar")!.getBoundingClientRect().width),
+    header: Math.round(document.querySelector(".header-side")!.getBoundingClientRect().width),
+    stored: localStorage.getItem("herdr-web-ui:sidebar-width"),
+  }));
+  const defaultWidths = await sidebarWidths();
+  assert.equal(defaultWidths.stored, null, "no sidebar width is stored before the edge is dragged");
+  const resizer = page.getByRole("separator", { name: "Resize sidebar", exact: true });
+  const edge = (await resizer.boundingBox())!;
+  await page.mouse.move(edge.x + edge.width / 2, 400);
+  await page.mouse.down();
+  await page.mouse.move(edge.x + edge.width / 2 + 80, 400, { steps: 4 });
+  await page.mouse.up();
+  const dragged = await sidebarWidths();
+  assert.equal(dragged.sidebar, defaultWidths.sidebar + 80, "the sidebar follows its dragged edge");
+  assert.equal(dragged.header, dragged.sidebar, "the sidebar's top row in the header keeps the sidebar's width");
+  assert.equal(dragged.stored, String(dragged.sidebar), "the dragged width is kept on this device");
+  await resizer.focus();
+  await page.keyboard.press("ArrowLeft");
+  assert.equal((await sidebarWidths()).sidebar, dragged.sidebar - 16, "an arrow key moves the focused edge one step");
+  assert.equal(await resizer.getAttribute("aria-valuenow"), String(dragged.sidebar - 16));
+  // half the window is the limit the keys enforce, and the edge reports it as the window changes
+  const wide = page.viewportSize()!;
+  await page.setViewportSize({ width: 900, height: wide.height });
+  await until(async () => await resizer.getAttribute("aria-valuemax") === "450", "the edge's upper limit follows the window");
+  await page.setViewportSize(wide);
+  await until(async () => await resizer.getAttribute("aria-valuemax") !== "450", "the limit returns with the window");
+  await resizer.dblclick();
+  assert.deepEqual(await sidebarWidths(), defaultWidths, "a double-click goes back to the default width and forgets the stored one");
+  console.log("PASS the sidebar's edge drags, steps from the keyboard, remembers its width and resets on a double-click");
+
+  // Settings → Sidebar rows → Two lines: a workspace row says what its pane is doing over its
+  // place, on a taller row; One line gives the workspace its name back
+  const oneLineHeight = await page.locator(".workspace-header").first().evaluate((row) => row.getBoundingClientRect().height);
+  assert.equal(await page.locator(".workspace-copy.is-two-line").count(), 0, "rows are one line until two are chosen");
+  await page.keyboard.press("ControlOrMeta+Shift+Comma");
+  const rowsSetting = page.locator('.settings-dialog .segmented[aria-label="Sidebar rows"]');
+  await rowsSetting.getByRole("button", { name: "Two lines", exact: true }).click();
+  await page.locator(".workspace-copy.is-two-line").first().waitFor();
+  assert.equal(await page.evaluate(() => JSON.parse(localStorage.getItem("herdr-web-ui:settings") ?? "{}").sidebarRows), "two");
+  assert.ok(await page.locator(".workspace-header").first().evaluate((row) => row.getBoundingClientRect().height) > oneLineHeight, "a two-line row is taller");
+  await rowsSetting.getByRole("button", { name: "One line", exact: true }).click();
+  await page.locator(".workspace-copy.is-two-line").first().waitFor({ state: "detached" });
+  await page.getByRole("button", { name: "Close settings", exact: true }).click();
+  console.log("PASS sidebar rows switch between one line and two");
+
   // An update request answered while the page is hidden (a phone app sent to the background) must
   // still release the buttons: the status poll stops with the page, the request does not.
   let releaseCheck!: () => void;
@@ -358,7 +474,6 @@ try {
 
   await checkPushSettings(browser, origin);
   await checkWakeLock(browser, origin, paneA);
-  await checkNeedsInput(browser, origin, paneA);
   await checkSecretInput(browser, origin);
   await checkTerminalCopy(browser, origin);
   await checkUsageMeters(browser, origin);
@@ -667,8 +782,8 @@ try {
   assert.equal(createRequests, 1);
   console.log("PASS session creation stays pending and opens one owned workspace");
 
-  // A git worktree from a workspace row's ⋯ menu, as herdr's prefix+shift+g makes one: a new
-  // workspace next to the repository's, selected; Open worktree… then lists it as already open.
+  // Existing git worktrees are discovered through the list API. A new worktree from the row's
+  // ⋯ menu appears under the same workspace, using its exact branch rather than its editable label.
   repo = join(root, `herdr-web-ui-test-repo-${process.pid.toString(36)}`);
   mkdirSync(repo);
   const git = (...args: string[]) => Bun.spawnSync(["git", "-c", "user.name=herdr-web-ui test", "-c", "user.email=test@example.invalid", ...args], { cwd: repo, stdout: "pipe", stderr: "pipe" });
@@ -678,8 +793,47 @@ try {
   assert.equal(git("commit", "-q", "-m", "fixture").exitCode, 0, "git commit");
   const repoWorkspace = await workspaceCreate({ cwd: repo, label: "herdr-web-ui-test-repo" });
   workspaces.push(repoWorkspace.workspace.workspace_id);
-  const repoRow = page.locator(`.pane-item:has(.pane-select[title^="${repoWorkspace.root_pane.pane_id} —"])`);
+  await page.getByRole("button", { name: "Settings", exact: true }).click();
+  await page.locator('.segmented[aria-label="Sidebar grouping"]').getByRole("button", { name: "By workspace", exact: true }).click();
+  await page.getByRole("button", { name: "Close settings", exact: true }).click();
+  const repoRow = workspaceHeader(repoWorkspace.workspace.workspace_id);
   await repoRow.waitFor();
+  const initialResponse = await fetch(`${origin}/api/worktree/create`, {
+    method: "POST", headers: { "content-type": "application/json" },
+    body: JSON.stringify({ workspace_id: repoWorkspace.workspace.workspace_id, branch: "browser/initial", label: "Existing checkout" }),
+  });
+  assert.equal(initialResponse.status, 200, "an existing branch fixture is created through the owned workspace API");
+  const initialWorktree = await initialResponse.json() as WorktreeOpened;
+  worktreeWorkspaces.push(initialWorktree.workspace_id);
+  const initialRow = page.locator(`.worktree-children .workspace-group[data-workspace="${initialWorktree.workspace_id}"]`);
+  await until(async () => await initialRow.locator(".workspace-name").textContent() === "browser/initial", "the list API discovers an existing worktree's exact branch");
+  assert.equal(await initialRow.locator(".worktree-workspace-label").textContent(), "Existing checkout", "the workspace label is secondary to its branch");
+  assert.equal(await repoRow.locator(".workspace-name").textContent(), "herdr-web-ui-test-repo", "the parent keeps its workspace name");
+  // A list read from before creation must not erase the branch supplied by the create response.
+  let releaseWorktreeList!: () => void;
+  const heldWorktreeList = new Promise<void>((resolve) => { releaseWorktreeList = resolve; });
+  releases.push(releaseWorktreeList);
+  let worktreeListCaptured = false;
+  let staleWorktreeListFinished = false;
+  let freshWorktreeListFinished = false;
+  await page.route("**/api/worktree/list?*", async (route) => {
+    const response = await route.fetch();
+    if (!worktreeListCaptured) {
+      worktreeListCaptured = true;
+      await heldWorktreeList;
+      await route.fulfill({ response });
+      staleWorktreeListFinished = true;
+    } else {
+      await route.fulfill({ response });
+      freshWorktreeListFinished = true;
+    }
+  });
+  await setPageHidden(true);
+  await setPageHidden(false);
+  await until(() => worktreeListCaptured, "a pre-create worktree inventory is held");
+  await repoRow.locator(".workspace-select").click();
+  await repoRow.locator(".workspace-toggle").click();
+  await initialRow.waitFor({ state: "detached" });
   await repoRow.hover();
   await repoRow.locator(".row-menu-toggle").click();
   await page.getByRole("menuitem", { name: "New worktree", exact: true }).click();
@@ -689,60 +843,112 @@ try {
   const suggested = await newWorktree.getByLabel(/^Branch/).inputValue();
   assert.match(suggested, /^worktree\/[a-z]+-[a-z]+-[0-9a-f]{4}$/);
   assert.equal(await newWorktree.getByLabel(/^Name/).inputValue(), suggested.replace("/", "-"));
-  await newWorktree.getByLabel(/^Branch/).fill("herdr-web-ui-test-feature");
+  await newWorktree.getByLabel(/^Branch/).fill("browser/sidebar");
   // the agent to start in the checkout is chosen here; the run takes a shell so nothing is launched
   const worktreeAgent = newWorktree.getByRole("combobox", { name: "Agent" });
   await worktreeAgent.click();
   await page.getByRole("option", { name: "Shell", exact: true }).click();
   assert.equal((await worktreeAgent.textContent())?.trim(), "Shell");
-  assert.equal(await newWorktree.getByLabel(/^Name/).inputValue(), "herdr-web-ui-test-feature");
+  assert.equal(await newWorktree.getByLabel(/^Name/).inputValue(), "browser-sidebar");
+  await newWorktree.getByLabel(/^Name/).fill("Sidebar redesign");
   const worktreeResponse = page.waitForResponse((response) => response.url().endsWith("/api/worktree/create"));
   await newWorktree.getByRole("button", { name: "Create worktree", exact: true }).click();
   const worktree = await (await worktreeResponse).json() as WorktreeOpened;
   worktreeWorkspaces.push(worktree.workspace_id);
-  assert.equal(worktree.branch, "herdr-web-ui-test-feature");
+  assert.equal(worktree.branch, "browser/sidebar");
   await newWorktree.waitFor({ state: "detached" });
   await until(async () => (await page.locator(`.pane-select[title^="${worktree.pane_id} —"]`).getAttribute("aria-current")) === "true", "the worktree's pane is selected");
-  await repoRow.hover();
-  await repoRow.locator(".row-menu-toggle").click();
+  const childRow = page.locator(`.worktree-children .workspace-group[data-workspace="${worktree.workspace_id}"]`);
+  const childHeader = childRow.locator(":scope > .workspace-header");
+  assert.equal(await repoRow.locator(".sidebar-drag-handle").count(), 0, "the parent workspace has no reorder grip column");
+  assert.equal(await childHeader.locator(".sidebar-drag-handle").count(), 0, "the branch workspace has no reorder grip column");
+  assert.equal(await repoRow.locator(".workspace-select").getAttribute("draggable"), "true", "the parent workspace row supports dragging");
+  assert.equal(await childHeader.locator(".workspace-select").getAttribute("draggable"), "true", "the branch workspace row supports dragging");
+  await until(async () => await childHeader.locator(".workspace-name").textContent() === "browser/sidebar", "a newly created child uses its exact branch including the slash");
+  assert.equal(await childHeader.locator(".worktree-workspace-label").textContent(), "Sidebar redesign");
+  assert.equal(await repoRow.locator(".workspace-toggle").getAttribute("aria-expanded"), "true", "creation expands a previously folded parent");
+  assert.equal(await page.locator(`.workspace-group[data-workspace="${repoWorkspace.workspace.workspace_id}"] + .worktree-children > .workspace-list > .workspace-group`).count(), 2,
+    "existing and newly created branches share their repository workspace");
+  assert.equal(await childHeader.locator('.workspace-select[aria-current="true"]').count(), 1, "the created branch is selected");
+  assert.equal(staleWorktreeListFinished, false, "the create response displays the branch before the pending list finishes");
+  releaseWorktreeList();
+  await until(() => staleWorktreeListFinished && freshWorktreeListFinished, "the stale inventory is followed by a fresh one");
+  assert.equal(await childHeader.locator(".workspace-name").textContent(), "browser/sidebar", "a pre-create inventory cannot erase the new branch");
+  await page.unroute("**/api/worktree/list?*");
+  await childHeader.hover();
+  await childHeader.locator(".row-menu-toggle").click();
+  await page.getByRole("menuitem", { name: "Rename workspace", exact: true }).click();
+  const worktreeRename = childHeader.getByRole("textbox", { name: "Workspace name", exact: true });
+  assert.equal(await childHeader.locator(".workspace-select").getAttribute("draggable"), "false", "an editing field disables row dragging");
+  await worktreeRename.fill("Sidebar renamed");
+  await worktreeRename.press("Enter");
+  await until(async () => await childHeader.locator(".worktree-workspace-label").textContent() === "Sidebar renamed", "the child workspace label is renamed");
+  assert.equal(await childHeader.locator(".workspace-select").getAttribute("draggable"), "true", "row dragging returns after editing finishes");
+  assert.equal(await childHeader.locator(".workspace-name").textContent(), "browser/sidebar", "renaming a workspace preserves its actual git branch");
+  if (process.env.UI_EVIDENCE_DIR) await page.screenshot({ path: join(process.env.UI_EVIDENCE_DIR, "worktree-branches-sidebar.png") });
+  // a workspace row's menu also opens from a right-click on the row
+  await repoRow.locator(".workspace-select").click({ button: "right" });
   await page.getByRole("menuitem", { name: "Open worktree…", exact: true }).click();
   const openWorktree = page.getByRole("dialog", { name: /^Open worktree/ });
   await openWorktree.waitFor();
-  const entry = openWorktree.locator(".worktree-row", { hasText: "herdr-web-ui-test-feature" });
+  const entry = openWorktree.locator(".worktree-row", { hasText: "browser/sidebar" });
   await entry.waitFor();
   assert.equal(await entry.locator(".pill").count(), 1, "the open checkout is marked as open");
   await page.keyboard.press("Escape");
   await openWorktree.waitFor({ state: "detached" });
-  console.log("PASS a worktree opens from the row menu as a grouped workspace, and Open worktree… knows it");
+  console.log("PASS existing and new branches sit under their workspace; creation expands the group and workspace renames preserve the branch");
+
+  // Keep one child for the group-aware reorder check; clean up the initial API-created fixture.
+  const removeInitial = await fetch(`${origin}/api/worktree/remove`, {
+    method: "POST", headers: { "content-type": "application/json" },
+    body: JSON.stringify({ workspace_id: initialWorktree.workspace_id }),
+  });
+  assert.equal(removeInitial.status, 200, "the initial owned checkout is removed");
+  await initialRow.waitFor({ state: "detached" });
+  worktreeWorkspaces.splice(worktreeWorkspaces.indexOf(initialWorktree.workspace_id), 1);
 
   // In the By workspace view the worktree's row sits under its repository's, as herdr packs them.
   // Its menu deletes the checkout: a dirty one is refused in git's words first, then deleted anyway.
-  await page.getByRole("button", { name: "Settings", exact: true }).click();
-  await page.locator('.segmented[aria-label="Sidebar grouping"]').getByRole("button", { name: "By workspace", exact: true }).click();
-  await page.getByRole("button", { name: "Close settings", exact: true }).click();
-  const childRow = page.locator(`.worktree-children .pane-item:has(.pane-select[title^="${worktree.pane_id} —"])`);
+  const repoHeader = repoRow;
   await childRow.waitFor();
   assert.equal(await page.locator(".worktree-children").count(), 1, "one group of worktrees, under the repository's row");
+  await herdrRpc("pane.report_agent", { pane_id: worktree.pane_id, source: "manual", agent: "codex", state: "idle" });
+  await agentRow(worktree.pane_id).waitFor();
+  await repoHeader.locator(".workspace-select").click();
+  await repoHeader.locator('.workspace-select[aria-current="true"]').waitFor();
+  assert.equal(await page.evaluate(() => JSON.parse(sessionStorage.getItem("herdr-web-ui:selection") ?? "null")?.pane_id),
+    repoWorkspace.root_pane.pane_id, "selecting the parent after its branch returns to the parent's own pane");
+  const repoToggle = repoHeader.locator(".workspace-toggle");
+  await repoToggle.click();
+  await childRow.waitFor({ state: "detached" });
+  // the folder that leads the row is the fold, and a closed one says how many checkouts it holds
+  assert.equal(await repoHeader.evaluate((header) => header.firstElementChild?.classList.contains("workspace-toggle") ?? false), true, "the fold leads the row");
+  assert.equal(await repoHeader.locator(".workspace-fold-count").textContent(), "+1");
+  assert.equal(await agentRow(worktree.pane_id).isVisible(), true, "folding a worktree group preserves its independent agent");
+  await agentRow(worktree.pane_id).locator(".agent-select").click();
+  await childHeader.locator('.workspace-select[aria-current="true"]').waitFor();
+  assert.equal(await repoToggle.getAttribute("aria-expanded"), "false", "an explicitly selected child remains visible within a folded group");
+  await repoToggle.click();
   // reorder is group-aware: the repository's row moves up past the group before it, as one, and
   // its lone worktree has no sibling to move among, so nothing is sent for it
   const moves: number[] = [];
   await page.route("**/api/workspace/move", async (route) => { moves.push(route.request().postDataJSON().insert_index as number); await route.continue(); });
   const orderBefore = (await herdrRpc<{ snapshot: { workspaces: { workspace_id: string }[] } }>("session.snapshot", {})).snapshot.workspaces.map((workspace) => workspace.workspace_id);
-  await repoRow.locator(".sidebar-drag-handle").focus();
+  await repoHeader.locator(".workspace-select").focus();
   await page.keyboard.press("Alt+ArrowUp");
   await until(() => moves.length === 1, "the repository's row moved up as a group");
   assert.equal(moves[0], orderBefore.indexOf(repoWorkspace.workspace.workspace_id) - 1, "it lands before the group above it");
-  await childRow.locator(".sidebar-drag-handle").focus();
+  await childHeader.locator(".workspace-select").focus();
   await page.keyboard.press("Alt+ArrowDown");
   await page.waitForTimeout(400);
   assert.equal(moves.length, 1, "a lone worktree has nowhere to move");
   await page.unroute("**/api/workspace/move");
   writeFileSync(join(worktree.path, "unsaved.txt"), "dirty\n");
-  await childRow.hover();
-  await childRow.locator(".row-menu-toggle").click();
+  await childHeader.hover();
+  await childHeader.locator(".row-menu-toggle").click();
   const childMenu = page.getByRole("menu");
   await childMenu.waitFor();
-  assert.deepEqual(await childMenu.getByRole("menuitem").allTextContents(), ["Rename workspace", "Rename pane", "New tab", "Close", "Delete worktree checkout…"], "a worktree row's menu");
+  assert.deepEqual(await childMenu.getByRole("menuitem").allTextContents(), ["Rename workspace", "Rename pane", "New tab", "Close workspace", "Delete worktree checkout…"], "a worktree workspace's menu");
   await childMenu.getByRole("menuitem", { name: "Delete worktree checkout…", exact: true }).click();
   const deleteConfirm = page.getByRole("alertdialog");
   await deleteConfirm.waitFor();
@@ -754,9 +960,6 @@ try {
   await childRow.waitFor({ state: "detached" });
   assert.equal(existsSync(worktree.path), false, "the checkout is gone");
   worktreeWorkspaces.splice(worktreeWorkspaces.indexOf(worktree.workspace_id), 1);
-  await page.getByRole("button", { name: "Settings", exact: true }).click();
-  await page.locator('.segmented[aria-label="Sidebar grouping"]').getByRole("button", { name: "By folder", exact: true }).click();
-  await page.getByRole("button", { name: "Close settings", exact: true }).click();
   console.log("PASS a worktree row sits under its repository's row, and its menu deletes the checkout, asking twice for a dirty one");
 
   // A second tab from the row's ⋯ menu: the dialog is New tab, with the workspace's folder shown
@@ -780,6 +983,12 @@ try {
   await tabDialog.waitFor({ state: "hidden" });
   await until(async () => (await page.locator(`.pane-select[title^="${createdTab.pane_id} —"]`).getAttribute("aria-current")) === "true", "the new tab's pane is selected, and the row shows it");
   assert.equal(await page.locator(`.pane-select[title^="${created.pane_id} —"]`).count(), 0, "the workspace stays one row");
+  assert.equal(await workspaceGroup(created.workspace_id).locator(".workspace-name").textContent(), "herdr-web-ui-test-browser-created",
+    "opening another tab preserves the workspace name in Spaces");
+  assert.equal(await workspaceGroup(created.workspace_id).locator(".workspace-select").count(), 1,
+    "all tabs share the workspace's representative row");
+  assert.equal(await workspaceGroup(created.workspace_id).locator(".sidebar-tab-heading").count(), 0,
+    "tab labels stay in the terminal tab strip");
   const strip = page.locator(".tab-strip");
   await strip.waitFor();
   assert.deepEqual(await strip.getByRole("tab").allTextContents(), ["Tab 1", "second"]);
@@ -809,6 +1018,8 @@ try {
   await page.keyboard.press("Enter");
   await until(async () => (await tabsInHerdr()).join() === "first,second", "herdr has the tab's new name, trimmed");
   assert.deepEqual(await strip.getByRole("tab").allTextContents(), ["first", "second"]);
+  assert.equal(await workspaceGroup(created.workspace_id).locator(".workspace-name").textContent(), "herdr-web-ui-test-browser-created",
+    "renaming a tab leaves the workspace name unchanged");
   await until(async () => await strip.getByRole("tab", { name: "first", exact: true }).evaluate((tab) => tab === document.activeElement), "the renamed tab has the focus back");
   // F2 opens the field on the focused tab; Escape leaves the name alone, and so does an empty one
   await page.keyboard.press("F2");
@@ -886,6 +1097,9 @@ try {
   assert.equal(await page.locator(`.pane-select[title^="${created.pane_id} —"]`).getAttribute("aria-current"), "true", "the open pane stays");
   await until(async () => await page.evaluate(() => document.activeElement?.matches(".app-header .drawer-toggle, .app-header .sidebar-toggle") === true), "the focus is not left on the page");
   console.log("PASS a tab is renamed by a double-click, F2 and its menu, and closed from its x and Delete, asking first while its agent works");
+  await page.getByRole("button", { name: "Settings", exact: true }).click();
+  await page.locator('.segmented[aria-label="Sidebar grouping"]').getByRole("button", { name: "By folder", exact: true }).click();
+  await page.getByRole("button", { name: "Close settings", exact: true }).click();
 
   // herdr 0.9.0 reports Codex's first directory-trust menu as idle. Exercise a
   // live, owned PTY menu so the chat controls cannot depend on a blocked badge.
@@ -1161,6 +1375,15 @@ try {
   await page.keyboard.press("Escape");
   await rowMenu.waitFor({ state: "detached" });
   assert.equal(await page.evaluate(() => document.activeElement?.classList.contains("row-menu-toggle") ?? false), true, "Escape returns focus to the row's ⋯");
+  // a right-click on the row opens the same menu, under the same button
+  await page.locator(".pane-item.is-selected .pane-select").click({ button: "right" });
+  await rowMenu.waitFor();
+  assert.equal(await page.locator(".pane-item.is-selected .row-menu-toggle").getAttribute("aria-expanded"), "true", "a right-click opens the row's own menu");
+  // the press left the focus on the row; the menu takes it a frame later
+  await until(async () => await page.evaluate(() => document.activeElement?.getAttribute("role") === "menuitem"), "the menu takes the focus");
+  await page.keyboard.press("Escape");
+  await rowMenu.waitFor({ state: "detached" });
+  assert.equal(await page.evaluate(() => document.activeElement?.classList.contains("row-menu-toggle") ?? false), true, "Escape after a right-click returns focus to the row's ⋯");
   await page.keyboard.press("Enter");
   await rowMenu.getByRole("menuitem", { name: "Close", exact: true }).click();
   const confirmClose = page.getByRole("alertdialog");

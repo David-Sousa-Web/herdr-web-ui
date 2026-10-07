@@ -7,13 +7,53 @@ between releases do not reach them. Remote-PC runtime bundles are versioned sepa
 
 ## [Unreleased]
 
+### Added
+- **Settings → Appearance → Sidebar rows** has **Two lines**: a workspace row shows what its
+  agent is doing, with the workspace and folder under it, as the sidebar did before its rows
+  became one line. **One line**, the workspace's name alone, stays the default.
+  ([#521](https://github.com/devswha/herdr-web-ui/pull/521))
+- A right-click on a workspace or pane row in the sidebar opens the row's menu, the one its `⋯`
+  button opens. ([#521](https://github.com/devswha/herdr-web-ui/pull/521))
+- The sidebar can be resized: drag its right edge, or focus the edge and use the arrow keys.
+  A double-click returns to the default width. The width is remembered on each device, and the
+  sidebar never takes more than half the window.
+  ([#521](https://github.com/devswha/herdr-web-ui/pull/521))
+
 ### Changed
 - The message box follows **Settings → Chat font size**, as the transcript and prompt cards
   already did: with a mouse it is typed at the transcript's size, and on a touch screen it
   grows with a size above 16px (it stays at 16px or more, so iOS still does not zoom).
   ([#515](https://github.com/devswha/herdr-web-ui/pull/515) by @phirschybar)
 
+- Workspace rows no longer reserve a left column for a reorder grip. Rows can still be dragged
+  directly or moved with Alt+Up/Down while focused.
+  ([#521](https://github.com/devswha/herdr-web-ui/pull/521))
+- The sidebar follows herdr's separate workspace and agent lists, drawn on one quiet grid. Every
+  row leads with the coding agent that runs in it (its mark, or a terminal for a shell and a
+  branch for a worktree without an agent) and ends in one status column, drawn by urgency (a filled red bubble waits for an answer, a
+  green dot has finished and was not looked at yet, a dim arc runs), which stays empty while
+  an agent is ready. Agent rows name the agent, then the PC when there are several, the workspace
+  and the tab. Sections are parted by space instead of rules, a row's menu button takes no room
+  until the row is hovered or selected, and a workspace row starts with a folder: where linked
+  worktrees sit under the workspace, the folder folds them, and folded it shows how many it
+  holds and the most urgent state among its checkouts. A PC's fold sits beside its `+`. A pane herdr could
+  not restore shows a warning glyph,
+  and the background-task count sits on agent rows.
+  Workspace rows keep their names, and agents open their panes directly. Tab and pane navigation
+  stays in the tab strip and palette; saved folder grouping choices stay in effect.
+  ([#521](https://github.com/devswha/herdr-web-ui/pull/521))
+- The sidebar no longer opens with a **Needs you** list of waiting panes. A pane that waits
+  shows its state on its workspace row and its row in **Agents**, and the alerts are unchanged.
+  ([#521](https://github.com/devswha/herdr-web-ui/pull/521))
+- Opened worktree branches appear beneath their repository workspace, using actual branch names
+  from herdr's worktree API and keeping custom workspace names beside them. Creating or opening
+  a worktree expands its group. The browser demo supports these worktree actions with fictional
+  checkouts too. ([#521](https://github.com/devswha/herdr-web-ui/pull/521))
+
 ### Fixed
+- A workspace row's state rolls up as herdr's does: a workspace with one finished agent and one
+  still running shows DONE, where it showed RUN.
+  ([#521](https://github.com/devswha/herdr-web-ui/pull/521))
 - Codex chat hides internal memory citation blocks and pairs the answer with its display record,
   so a reply that uses memory appears once without raw citation markup. Quoted code examples
   keep their text. ([#514](https://github.com/devswha/herdr-web-ui/pull/514) by @JJLiebig)

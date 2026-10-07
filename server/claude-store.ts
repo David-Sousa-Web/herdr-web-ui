@@ -21,11 +21,15 @@ import type { ProcessRow } from "./windows-processes.ts";
 
 const MAX_PROJECT_NAME = 200;
 
-/** A Claude Code process in herdr's process info; a Windows process comes with backslashes and `.exe`. */
+/** Claude's executable; a Windows one (backslashes or `.exe`) is matched without case, as Windows names files. */
+function isClaudeExecutable(text = ""): boolean {
+  return /(?:^|[\\/])claude(?:\.exe)?$/.test(/\\|\.exe$/i.test(text) ? text.toLowerCase() : text);
+}
+
+/** A Claude Code process in herdr's process info. */
 export function isClaudeProcess(entry: { name?: string; argv0?: string; argv?: readonly string[] }): boolean {
-  const executable = /(?:^|[\\/])claude(?:\.exe)?$/;
   // macOS keeps the executable name "node" for npm installs; the process title is argv0.
-  return entry.name === "claude" || entry.name === "claude.exe" || executable.test(entry.argv0 ?? "") || executable.test(entry.argv?.[0] ?? "");
+  return isClaudeExecutable(entry.name) || isClaudeExecutable(entry.argv0) || isClaudeExecutable(entry.argv?.[0]);
 }
 
 /** Java's String.hashCode, which Claude Code uses for the suffix of a long name. */
@@ -67,7 +71,7 @@ async function windowsClaudeStores(home: string): Promise<string[]> {
   let siblings: string[] = [];
   try {
     siblings = (await readdir(home, { withFileTypes: true }))
-      .filter((entry) => entry.isDirectory() && entry.name.startsWith(".claude-"))
+      .filter((entry) => entry.isDirectory() && entry.name.toLowerCase().startsWith(".claude-"))
       .map((entry) => join(home, entry.name))
       .sort();
   } catch { /* no home to list: the default store alone */ }

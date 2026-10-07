@@ -246,6 +246,16 @@ describe("a Windows Claude's store", () => {
     expect(isClaudeProcess({ name: "claude-helper.exe", argv0: "C:\\tools\\claude-helper.exe" })).toBe(false);
     expect(isClaudeProcess({ name: "notclaude.exe", argv: ["C:\\tools\\notclaude.exe"] })).toBe(false);
     expect(isClaudeProcess({ name: "node", argv: ["/usr/bin/node", "claude"] })).toBe(false);
+    // Windows names files without case; POSIX keeps it
+    expect(isClaudeProcess({ name: "Claude.EXE", argv0: "C:\\Tools\\Claude.EXE" })).toBe(true);
+    expect(isClaudeProcess({ name: "node", argv: ["C:\\Tools\\CLAUDE"] })).toBe(true);
+    expect(isClaudeProcess({ name: "Claude", argv: ["/usr/local/bin/Claude"] })).toBe(false);
+  });
+
+  it("finds a store whose name differs from ~/.claude-* only in case", async () => {
+    const dir = home();
+    record(join(dir, ".Claude-Work"));
+    expect(await storeOf(dir)).toBe(join(dir, ".Claude-Work"));
   });
 
   it("keeps the default store for a Claude that writes there", async () => {

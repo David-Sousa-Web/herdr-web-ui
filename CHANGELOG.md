@@ -90,6 +90,11 @@ between releases do not reach them. Remote-PC runtime bundles are versioned sepa
 - The Claude usage meter shows a model's own weekly limit, such as Fable's, which Anthropic
   reports only in its list of limits; the Opus and Sonnet weeks are still read as before.
   ([#532](https://github.com/devswha/herdr-web-ui/pull/532) by @bertkiefer)
+- A Claude or Codex question asked right after a message that began with a number ("1. …") shows
+  as a question card in the chat again. The sent message, still on screen above the question, was
+  read as an option of its own, so the question fell back to a card of arrow keys. Option
+  descriptions that wrap over two lines are shown whole, not cut off at the first line.
+  ([#517](https://github.com/devswha/herdr-web-ui/pull/517) by @kilhyeonjun)
 
 ## [0.3.52] - 2026-10-06
 

@@ -87,6 +87,9 @@ between releases do not reach them. Remote-PC runtime bundles are versioned sepa
 - **Dismiss** on the terminal's notice that input was not sent works: a tap or click on it went
   through to the terminal under it and the notice stayed.
   ([#508](https://github.com/devswha/herdr-web-ui/pull/508))
+- The Claude usage meter shows a model's own weekly limit, such as Fable's, which Anthropic
+  reports only in its list of limits; the Opus and Sonnet weeks are still read as before.
+  ([#532](https://github.com/devswha/herdr-web-ui/pull/532) by @bertkiefer)
 
 ## [0.3.52] - 2026-10-06
 

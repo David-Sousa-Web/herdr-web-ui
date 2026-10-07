@@ -56,6 +56,7 @@ between releases do not reach them. Remote-PC runtime bundles are versioned sepa
   Language are menus now, and Language lists English, 简体中文, 日本語, 한국어 in that order after
   System. Every setting keeps its value. The Back button of a phone or a browser
   steps out of Settings (the key bar editor, the page, then the dialog) instead of leaving the app.
+  ([#562](https://github.com/devswha/herdr-web-ui/pull/562))
 - The mic button shows in a desktop's chat without being turned on. **Settings → Voice input →
   Microphone button** is now **Auto**, **On** or **Off**. Auto, the default, puts the mic in the
   chat's message box on a desktop, and only where dictation can work: over HTTPS, with an OpenAI
